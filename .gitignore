@@ -221,6 +221,7 @@ ENV/
 # End of https://www.gitignore.io/api/macos,visualstudiocode,python,images,archives
 
 *.cbz
+*.jpg
 
 ### Tags ###
 # Ignore tags created by etags, ctags, gtags (GNU global) and cscope
