@@ -84,11 +84,11 @@ class Download:
 
         # get list of pages
         pages = self.site['page_list'](page)
-        pages = [(i+1,p) for i, p in enumerate(pages[1:])]
+        tasks = [(i+1,p) for i, p in enumerate(pages[1:])]
 
         # get multiple pages
         start_time = time()
-        q = Gevent_queue(pages, worker_func=worker_func, workers=10)
+        q = Gevent_queue(tasks, worker_func=worker_func, workers=10)
         q_out = q.execute()
 
         # save the images
