@@ -26,7 +26,6 @@ class Gevent_queue:
         self.tasks = tasks  # format is [(pagenum, pageurl)]
         self.workers = workers  # num of workers
         self.out = []  # list of results
-        # self.filename = filename.replace('/', '')
         self.worker_func = worker_func
 
     def worker(self, n):
@@ -46,10 +45,6 @@ class Gevent_queue:
         gevent.joinall([gevent.spawn(self.worker, x) for x in xrange(self.workers)])
         self.out.sort()
         return self.out
-
-    def save_jpg(self, filename):
-        for img in self.out:
-            img[2].save(filename + '-' + str(img[0]) + '.jpg')
 
 
 class Download:
@@ -89,18 +84,41 @@ class Download:
         # get list of pages
         pages = sites['mangareader']['page_list'](page)
         pages = [(i+1,p) for i, p in enumerate(pages[1:])]
-        # pprint(pages)
 
         # get multiple pages
         start_time = time()
         q = Gevent_queue(pages, worker_func=worker_func, workers=10)
-        res = q.execute()
-        # res.sort()
-        # pprint(res)
-        q.save_jpg(self.filename)
+        q_out = q.execute()
+
+        # save the images
+        # TODO save into a cbz
+        for img in q_out:
+            img[2].save(self.filename + '-' + str(img[0]) + '.jpg')
+
         print '>>> Time:', time()-start_time
 
 
+class Gevent_test:
+    '''
+    For testing if Gevent_queue is refactored correctly
+    >>> q = Gevent_test()
+    >>> q.execute()
+    '''
+    def execute(self):
+        def worker(task):
+            gevent.sleep(1)
+            return True
+
+        tasks = range(10)
+        q = Gevent_queue(tasks, worker)
+        q.execute()
+
+
 if __name__ == '__main__':
+    # q = Gevent_test()
+    # q.execute()
+
     d = Download('/naruto/5')
     d.execute()
+
+
