@@ -130,7 +130,9 @@ class Download_many:
             d.execute()
         tasks = self.paths
         q = Gevent_queue(tasks, worker_func, workers=4)
+        start_time = time()
         q.execute()
+        print '>>> Overall time', time()-start_time
 
 
 class Gevent_test:
@@ -150,7 +152,7 @@ class Gevent_test:
 
 
 if __name__ == '__main__':
-    d = Download_many(sites['mangareader'], ['/naruto/2', '/naruto/3', '/naruto/4'])
+    d = Download_many(sites['mangareader'], ['/naruto/2', '/naruto/3', '/naruto/4', '/naruto/5'])
     d.execute()
 
 
