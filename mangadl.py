@@ -48,7 +48,8 @@ class Gevent_queue:
 
 
 class Download:
-    def __init__(self, path):
+    def __init__(self, site, path):
+        self.site = site
         self.path = path
         self.filename = path.replace('/', '')
 
@@ -60,7 +61,7 @@ class Download:
             # get page
             res_raw = requests.get(task[1])
             res = BeautifulSoup(res_raw.text, 'html.parser')
-            img = sites['mangareader']['img'](res)
+            img = self.site['img'](res)
 
             # get img
             jpg_raw = requests.get(img)
@@ -71,9 +72,9 @@ class Download:
 
         # get page 1 + page 1 img + links to other pages
         print 'Getting page list'
-        page_raw = requests.get(sites['mangareader']['url'] + self.path)
+        page_raw = requests.get(self.site['url'] + self.path)
         page = BeautifulSoup(page_raw.text, 'html.parser')
-        img1 = sites['mangareader']['img'](page)
+        img1 = self.site['img'](page)
 
         jpg_raw = requests.get(img1)
         jpg = Image.open(StringIO(jpg_raw.content))
@@ -82,7 +83,7 @@ class Download:
         # TODO save into a cbz
 
         # get list of pages
-        pages = sites['mangareader']['page_list'](page)
+        pages = self.site['page_list'](page)
         pages = [(i+1,p) for i, p in enumerate(pages[1:])]
 
         # get multiple pages
@@ -118,7 +119,7 @@ if __name__ == '__main__':
     # q = Gevent_test()
     # q.execute()
 
-    d = Download('/naruto/5')
+    d = Download(sites['mangareader'], '/naruto/5')
     d.execute()
 
 
