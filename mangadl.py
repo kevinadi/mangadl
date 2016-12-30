@@ -21,10 +21,18 @@ sites = {
 
 
 class Gevent_queue:
+    '''
+    Generic queue using gevent
+        tasks: list of tasks to be executed
+        worker_function: the function that executes a task
+    Each worker will execute `worker_function(task)`
+    >>> q = Gevent_queue(tasks, worker_function)
+    >>> q.execute()
+    '''
     def __init__(self, tasks, worker_func, workers=4):
         self.queue = Queue()
-        self.tasks = tasks  # format is [(pagenum, pageurl)]
-        self.workers = workers  # num of workers
+        self.tasks = tasks  # list of tasks
+        self.workers = workers  # number of workers
         self.out = []  # list of results
         self.worker_func = worker_func
 
@@ -48,6 +56,11 @@ class Gevent_queue:
 
 
 class Download:
+    '''
+    Download single edition
+    >>> d = Download(sites['mangareader'], '/naruto/2')
+    >>> d.execute()
+    '''
     def __init__(self, site, path):
         self.site = site
         self.path = path
@@ -71,7 +84,7 @@ class Download:
             return (task[0], img, jpg)
 
         # get page 1 + page 1 img + links to other pages
-        print 'Getting page list'
+        print 'Getting page list for', self.path
         page_raw = requests.get(self.site['url'] + self.path)
         page = BeautifulSoup(page_raw.text, 'html.parser')
         img1 = self.site['img'](page)
@@ -84,6 +97,8 @@ class Download:
 
         # get list of pages
         pages = self.site['page_list'](page)
+
+        # tasks format is [(pagenum, pageurl)]
         tasks = [(i+1,p) for i, p in enumerate(pages[1:])]
 
         # get multiple pages
@@ -96,7 +111,26 @@ class Download:
         for img in q_out:
             img[2].save(self.filename + '-' + str(img[0]) + '.jpg')
 
-        print '>>> Time:', time()-start_time
+        print '>>>', self.path, 'time:', time()-start_time
+
+
+class Download_many:
+    '''
+    Download many editions
+    >>> d = Download_many(sites['mangareader'], ['/naruto/4', '/naruto/5', '/naruto/6'])
+    >>> d.execute()
+    '''
+    def __init__(self, site, paths):
+        self.site = site
+        self.paths = paths
+
+    def execute(self):
+        def worker_func(path):
+            d = Download(self.site, path)
+            d.execute()
+        tasks = self.paths
+        q = Gevent_queue(tasks, worker_func, workers=4)
+        q.execute()
 
 
 class Gevent_test:
@@ -116,10 +150,7 @@ class Gevent_test:
 
 
 if __name__ == '__main__':
-    # q = Gevent_test()
-    # q.execute()
-
-    d = Download(sites['mangareader'], '/naruto/5')
+    d = Download_many(sites['mangareader'], ['/naruto/2', '/naruto/3', '/naruto/4'])
     d.execute()
 
 
