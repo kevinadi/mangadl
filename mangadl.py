@@ -131,22 +131,6 @@ class Download_many:
         print '>>> Overall time', time()-start_time
 
 
-class Gevent_test:
-    '''
-    For testing if Gevent_queue is refactored correctly
-    >>> q = Gevent_test()
-    >>> q.execute()
-    '''
-    def execute(self):
-        def worker(task):
-            gevent.sleep(1)
-            return True
-
-        tasks = range(10)
-        q = Gevent_queue(tasks, worker)
-        q.execute()
-
-
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('manga_name', help='Manga name')
