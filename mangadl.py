@@ -56,39 +56,42 @@ class Gevent_queue:
         return self.out
 
 
-class Download:
+class Download_single:
     '''
     Download single chapter
-    >>> d = Download(sites['mangareader'], '/naruto/2')
+    >>> d = Download_single(sites['mangareader'], '/naruto/2')
     >>> d.execute()
     '''
     def __init__(self, site, path):
         self.site = site
         self.path = path
-        self.filename = path.replace('/', '')
+        filename = filter(None, path.split('/'))
+        self.filename = filename[0] + '-' + filename[1].zfill(3)
+
+    def worker_func(self, task):
+        '''
+        task is of the form (pagenum, pageurl)
+        output is (filename, jpg_bytes)
+        '''
+        # get page
+        res_raw = requests.get(task[1])
+        res = BeautifulSoup(res_raw.text, 'html.parser')
+        img = self.site['img'](res)
+
+        # get img
+        jpg_raw = requests.get(img)
+
+        # finish task
+        fname = self.filename + '-' + str(task[0]).zfill(3)
+        return (fname, jpg_raw.content)
 
     def execute(self):
-        def worker_func(task):
-            '''
-            task is of the form (pagenum, pageurl)
-            '''
-            # get page
-            res_raw = requests.get(task[1])
-            res = BeautifulSoup(res_raw.text, 'html.parser')
-            img = self.site['img'](res)
-
-            # get img
-            jpg_raw = requests.get(img)
-
-            # finish task
-            return (task[0], img, jpg_raw.content)
-
         # get page 1 + page 1 img + links to other pages
         print 'Getting page list for', self.path
         page_raw = requests.get(self.site['url'] + self.path)
         page = BeautifulSoup(page_raw.text, 'html.parser')
         img1 = self.site['img'](page)
-        jpg_raw = requests.get(img1)
+        jpg1_raw = requests.get(img1)
 
         # get list of pages
         pages = self.site['page_list'](page)
@@ -98,16 +101,13 @@ class Download:
 
         # get multiple pages
         start_time = time()
-        q = Gevent_queue(tasks, worker_func=worker_func, workers=4)
+        q = Gevent_queue(tasks, worker_func=self.worker_func, workers=4)
         q_out = q.execute()
+        q_out.insert(0, (self.filename + '-000', jpg1_raw.content))
 
-        # save into a cbz
-        with zipfile.ZipFile(self.filename + '.cbz', 'w', zipfile.ZIP_STORED) as cbz:
-            cbz.writestr(self.filename + '-0.jpg', jpg_raw.content)
-            for img in q_out:
-                cbz.writestr(self.filename + '-' + str(img[0]) + '.jpg', img[2])
-
+        # return results
         print '>>>', self.path, 'time:', time()-start_time
+        return q_out
 
 
 class Download_many:
@@ -119,15 +119,27 @@ class Download_many:
     def __init__(self, site, paths):
         self.site = site
         self.paths = paths
+        self.out = []
+        filename1 = filter(None, paths[0].split('/'))
+        filename2 = filter(None, paths[-1].split('/'))
+        self.filename = filename1[0] + '-' + filename1[1].zfill(3) + '-' + filename2[1].zfill(3)
+
+    def worker_func(self, path):
+        d = Download_single(self.site, path)
+        self.out += d.execute()
 
     def execute(self):
-        def worker_func(path):
-            d = Download(self.site, path)
-            d.execute()
         tasks = self.paths
-        q = Gevent_queue(tasks, worker_func, workers=4)
+        q = Gevent_queue(tasks, self.worker_func, workers=4)
         start_time = time()
         q.execute()
+        self.out.sort()
+
+        # save into cbz
+        with zipfile.ZipFile(self.filename + '.cbz', 'w', zipfile.ZIP_STORED) as cbz:
+            for img in self.out:
+                cbz.writestr(img[0] + '.jpg', img[1])
+
         print '>>> Overall time', time()-start_time
 
 
