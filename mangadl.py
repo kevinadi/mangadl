@@ -5,8 +5,8 @@ from gevent import monkey
 import requests
 from time import time
 from pprint import pprint
-from PIL import Image
 from StringIO import StringIO
+import zipfile
 
 monkey.patch_socket()
 
@@ -57,7 +57,7 @@ class Gevent_queue:
 
 class Download:
     '''
-    Download single edition
+    Download single chapter
     >>> d = Download(sites['mangareader'], '/naruto/2')
     >>> d.execute()
     '''
@@ -78,22 +78,16 @@ class Download:
 
             # get img
             jpg_raw = requests.get(img)
-            jpg = Image.open(StringIO(jpg_raw.content))
 
             # finish task
-            return (task[0], img, jpg)
+            return (task[0], img, jpg_raw.content)
 
         # get page 1 + page 1 img + links to other pages
         print 'Getting page list for', self.path
         page_raw = requests.get(self.site['url'] + self.path)
         page = BeautifulSoup(page_raw.text, 'html.parser')
         img1 = self.site['img'](page)
-
         jpg_raw = requests.get(img1)
-        jpg = Image.open(StringIO(jpg_raw.content))
-        jpg.save(self.filename + '-0.jpg')
-
-        # TODO save into a cbz
 
         # get list of pages
         pages = self.site['page_list'](page)
@@ -103,20 +97,21 @@ class Download:
 
         # get multiple pages
         start_time = time()
-        q = Gevent_queue(tasks, worker_func=worker_func, workers=10)
+        q = Gevent_queue(tasks, worker_func=worker_func, workers=4)
         q_out = q.execute()
 
-        # save the images
-        # TODO save into a cbz
-        for img in q_out:
-            img[2].save(self.filename + '-' + str(img[0]) + '.jpg')
+        # save into a cbz
+        with zipfile.ZipFile(self.filename + '.cbz', 'w', zipfile.ZIP_STORED) as cbz:
+            cbz.writestr(self.filename + '-0.jpg', jpg_raw.content)
+            for img in q_out:
+                cbz.writestr(self.filename + '-' + str(img[0]) + '.jpg', img[2])
 
         print '>>>', self.path, 'time:', time()-start_time
 
 
 class Download_many:
     '''
-    Download many editions
+    Download many chapters
     >>> d = Download_many(sites['mangareader'], ['/naruto/4', '/naruto/5', '/naruto/6'])
     >>> d.execute()
     '''
@@ -152,7 +147,6 @@ class Gevent_test:
 
 
 if __name__ == '__main__':
-    d = Download_many(sites['mangareader'], ['/naruto/2', '/naruto/3', '/naruto/4', '/naruto/5'])
+    chapters = ['/naruto/{0}'.format(x) for x in xrange(1,11)]
+    d = Download_many(sites['mangareader'], chapters)
     d.execute()
-
-
