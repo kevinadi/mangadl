@@ -7,6 +7,7 @@ from time import time
 from pprint import pprint
 from StringIO import StringIO
 import zipfile
+import argparse
 
 monkey.patch_socket()
 
@@ -45,7 +46,7 @@ class Gevent_queue:
             worker_out = self.worker_func(task)
             self.out.append(worker_out)
 
-            print 'Worker {0} finished {1} in {2}'.format(n, task, time()-start_time)
+            # print 'Worker {0} finished {1} in {2}'.format(n, task, time()-start_time)
 
     def execute(self):
         for task in self.tasks:
@@ -147,6 +148,12 @@ class Gevent_test:
 
 
 if __name__ == '__main__':
-    chapters = ['/naruto/{0}'.format(x) for x in xrange(1,11)]
+    parser = argparse.ArgumentParser()
+    parser.add_argument('manga_name', help='Manga name')
+    parser.add_argument('from_chapter', help='From chapter', type=int)
+    parser.add_argument('to_chapter', help='To chapter', type=int)
+    args = parser.parse_args()
+
+    chapters = ['/' + args.manga_name + '/{0}'.format(x) for x in xrange(args.from_chapter, args.to_chapter+1)]
     d = Download_many(sites['mangareader'], chapters)
     d.execute()
