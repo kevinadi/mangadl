@@ -10,6 +10,7 @@ from StringIO import StringIO
 
 monkey.patch_socket()
 
+
 sites = {
     'mangareader': {
         'url': 'http://www.mangareader.net',
@@ -18,19 +19,49 @@ sites = {
     }
 }
 
-class Gevent_download:
-    def __init__(self, tasks, workers=4, filename='out'):
+
+class Gevent_queue:
+    def __init__(self, tasks, worker_func, workers=4):
         self.queue = Queue()
         self.tasks = tasks  # format is [(pagenum, pageurl)]
         self.workers = workers  # num of workers
         self.out = []  # list of results
-        self.filename = filename.replace('/', '')
+        # self.filename = filename.replace('/', '')
+        self.worker_func = worker_func
 
-    def worker(self,n, func):
+    def worker(self, n):
         while not self.queue.empty():
             start_time = time()
             task = self.queue.get()
 
+            # execute worker function
+            worker_out = self.worker_func(task)
+            self.out.append(worker_out)
+
+            print 'Worker {0} finished {1} in {2}'.format(n, task, time()-start_time)
+
+    def execute(self):
+        for task in self.tasks:
+            self.queue.put_nowait(task)
+        gevent.joinall([gevent.spawn(self.worker, x) for x in xrange(self.workers)])
+        self.out.sort()
+        return self.out
+
+    def save_jpg(self, filename):
+        for img in self.out:
+            img[2].save(filename + '-' + str(img[0]) + '.jpg')
+
+
+class Download:
+    def __init__(self, name):
+        self.name = name
+        self.filename = name.replace('/', '')
+
+    def execute(self):
+        def worker_func(task):
+            '''
+            task is of the form (pagenum, pageurl)
+            '''
             # get page
             res_raw = requests.get(task[1])
             res = BeautifulSoup(res_raw.text, 'html.parser')
@@ -41,26 +72,8 @@ class Gevent_download:
             jpg = Image.open(StringIO(jpg_raw.content))
 
             # finish task
-            self.out.append((task[0], img, jpg))
-            print 'Worker {0} finished {1} in {2}'.format(n, task, time()-start_time)
+            return (task[0], img, jpg)
 
-    def execute(self):
-        for task in self.tasks:
-            self.queue.put_nowait(task)
-        gevent.joinall([gevent.spawn(self.worker, x) for x in xrange(self.workers)])
-        self.out.sort()
-        return self.out
-
-    def save_jpg(self):
-        for img in self.out:
-            img[2].save_jpg(self.filename + '-' + str(img[0]) + '.jpg')
-
-class Download:
-    def __init__(self, name):
-        self.name = name
-        self.filename = name.replace('/', '')
-
-    def execute(self):
         # get page 1 + page 1 img + links to other pages
         print 'Getting page list'
         page_raw = requests.get(sites['mangareader']['url'] + self.name)
@@ -69,7 +82,7 @@ class Download:
 
         jpg_raw = requests.get(img1)
         jpg = Image.open(StringIO(jpg_raw.content))
-        jpg.save_jpg(self.filename + '-0.jpg')
+        jpg.save(self.filename + '-0.jpg')
 
         # TODO save into a cbz
 
@@ -80,11 +93,11 @@ class Download:
 
         # get multiple pages
         start_time = time()
-        q = Gevent_download(pages, workers=10, filename=self.filename)
+        q = Gevent_queue(pages, worker_func=worker_func, workers=10)
         res = q.execute()
         # res.sort()
         # pprint(res)
-        q.save()
+        q.save_jpg(self.filename)
         print '>>> Time:', time()-start_time
 
 
