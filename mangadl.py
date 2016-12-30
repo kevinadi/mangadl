@@ -48,9 +48,9 @@ class Gevent_queue:
 
 
 class Download:
-    def __init__(self, name):
-        self.name = name
-        self.filename = name.replace('/', '')
+    def __init__(self, path):
+        self.path = path
+        self.filename = path.replace('/', '')
 
     def execute(self):
         def worker_func(task):
@@ -71,7 +71,7 @@ class Download:
 
         # get page 1 + page 1 img + links to other pages
         print 'Getting page list'
-        page_raw = requests.get(sites['mangareader']['url'] + self.name)
+        page_raw = requests.get(sites['mangareader']['url'] + self.path)
         page = BeautifulSoup(page_raw.text, 'html.parser')
         img1 = sites['mangareader']['img'](page)
 
