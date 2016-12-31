@@ -73,17 +73,23 @@ class Download_single:
         task is of the form (pagenum, pageurl)
         output is (filename, jpg_bytes)
         '''
-        # get page
-        res_raw = requests.get(task[1])
-        res = BeautifulSoup(res_raw.text, 'html.parser')
-        img = self.site['img'](res)
+        for retry in xrange(3):
+            try:
+                # get page
+                res_raw = requests.get(task[1])
+                res = BeautifulSoup(res_raw.text, 'html.parser')
+                img = self.site['img'](res)
 
-        # get img
-        jpg_raw = requests.get(img)
+                # get img
+                jpg_raw = requests.get(img)
 
-        # finish task
-        fname = self.filename + '-' + str(task[0]).zfill(3)
-        return (fname, jpg_raw.content)
+                # finish task
+                fname = self.filename + '-' + str(task[0]).zfill(3)
+            except Exception as e:
+                print 'Caught', type(e), 'retrying...', retry
+                gevent.sleep(1)
+            else:
+                return (fname, jpg_raw.content)
 
     def execute(self):
         # get page 1 + page 1 img + links to other pages
