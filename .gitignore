@@ -222,6 +222,7 @@ ENV/
 
 *.cbz
 *.jpg
+.venv
 
 ### Tags ###
 # Ignore tags created by etags, ctags, gtags (GNU global) and cscope
