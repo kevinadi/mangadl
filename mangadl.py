@@ -67,6 +67,7 @@ class Download_single:
         self.path = path
         filename = filter(None, path.split('/'))
         self.filename = filename[0] + '-' + filename[1].zfill(3)
+        self.workers = args.ppages
 
     def worker_func(self, task):
         '''
@@ -107,7 +108,7 @@ class Download_single:
 
         # get multiple pages
         start_time = time()
-        q = Gevent_queue(tasks, worker_func=self.worker_func, workers=4)
+        q = Gevent_queue(tasks, worker_func=self.worker_func, workers=self.workers)
         q_out = q.execute()
         q_out.insert(0, (self.filename + '-000', jpg1_raw.content))
 
@@ -129,6 +130,7 @@ class Download_many:
         filename1 = filter(None, paths[0].split('/'))
         filename2 = filter(None, paths[-1].split('/'))
         self.filename = filename1[0] + '-' + filename1[1].zfill(3) + '-' + filename2[1].zfill(3)
+        self.workers = args.pchapters
 
     def worker_func(self, path):
         d = Download_single(self.site, path)
@@ -136,7 +138,7 @@ class Download_many:
 
     def execute(self):
         tasks = self.paths
-        q = Gevent_queue(tasks, self.worker_func, workers=4)
+        q = Gevent_queue(tasks, self.worker_func, workers=self.workers)
         start_time = time()
         q.execute()
         self.out.sort()
@@ -154,6 +156,8 @@ if __name__ == '__main__':
     parser.add_argument('manga_name', help='Manga name')
     parser.add_argument('from_chapter', help='From chapter', type=int)
     parser.add_argument('to_chapter', help='To chapter', type=int)
+    parser.add_argument('--pchapters', help='number of parallel chapters', type=int, default=4)
+    parser.add_argument('--ppages', help='number of parallel pages', type=int, default=4)
     args = parser.parse_args()
 
     chapters = ['/' + args.manga_name + '/{0}'.format(x) for x in xrange(args.from_chapter, args.to_chapter+1)]
