@@ -8,6 +8,7 @@ from pprint import pprint
 from StringIO import StringIO
 import zipfile
 import argparse
+from tqdm import tqdm
 
 monkey.patch_socket()
 
@@ -45,8 +46,6 @@ class Gevent_queue:
             # execute worker function
             worker_out = self.worker_func(task)
             self.out.append(worker_out)
-
-            # print 'Worker {0} finished {1} in {2}'.format(n, task, time()-start_time)
 
     def execute(self):
         for task in self.tasks:
@@ -87,14 +86,13 @@ class Download_single:
                 # finish task
                 fname = self.filename + '-' + str(task[0]).zfill(3)
             except Exception as e:
-                print 'Caught', type(e), 'retrying...', retry
                 gevent.sleep(1)
             else:
+                # progressbar.update(self.pbar_increment)  # global progressbar
                 return (fname, jpg_raw.content)
 
     def execute(self):
         # get page 1 + page 1 img + links to other pages
-        print 'Getting page list for', self.path
         page_raw = requests.get(self.site['url'] + self.path)
         page = BeautifulSoup(page_raw.text, 'html.parser')
         img1 = self.site['img'](page)
@@ -106,14 +104,16 @@ class Download_single:
         # tasks format is [(pagenum, pageurl)]
         tasks = [(i+1,p) for i, p in enumerate(pages[1:])]
 
+        # progress bar increment -- global
+        # self.pbar_increment = 100.0/(len(tasks)+1)
+        # progressbar.update(self.pbar_increment)
+
         # get multiple pages
         start_time = time()
         q = Gevent_queue(tasks, worker_func=self.worker_func, workers=self.workers)
         q_out = q.execute()
         q_out.insert(0, (self.filename + '-000', jpg1_raw.content))
 
-        # return results
-        print '>>>', self.path, 'time:', time()-start_time
         return q_out
 
 
@@ -135,6 +135,7 @@ class Download_many:
     def worker_func(self, path):
         d = Download_single(self.site, path)
         self.out += d.execute()
+        progressbar.update(1)  # Progress bar on overall chapter
 
     def execute(self):
         tasks = self.paths
@@ -148,8 +149,6 @@ class Download_many:
             for img in self.out:
                 cbz.writestr(img[0] + '.jpg', img[1])
 
-        print '>>> Overall time', time()-start_time
-
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
@@ -161,5 +160,10 @@ if __name__ == '__main__':
     args = parser.parse_args()
 
     chapters = ['/' + args.manga_name + '/{0}'.format(x) for x in xrange(args.from_chapter, args.to_chapter+1)]
+    # progressbar = tqdm(total=len(chapters)*100) # global progressbar
+    progressbar = tqdm(total=len(chapters))
+    start_time = time()
     d = Download_many(sites['mangareader'], chapters)
     d.execute()
+    progressbar.close()
+    print '>>> Overall time', time()-start_time
