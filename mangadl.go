@@ -76,10 +76,12 @@ func (d DownloadResults) Swap(i int, j int) {
 }
 
 func downloadImage(url string) []byte {
+	for retry := 1; retry <= 3; retry++ {
 	/* open url */
 	response, e := http.Get(url)
 	if e != nil {
-		log.Fatal(e)
+			log.Println("Error getting", url, "retrying...", retry)
+			continue
 	}
 	defer response.Body.Close()
 
@@ -89,6 +91,9 @@ func downloadImage(url string) []byte {
 		log.Fatalf("ioutil.ReadAll -> %v", err)
 	}
 	return data
+}
+	log.Fatal("Error downloading image after 3 retries:", url)
+	return nil
 }
 
 func dumpImage(outfile string, imageBytes []byte) {
