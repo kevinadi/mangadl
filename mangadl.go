@@ -27,7 +27,7 @@ var mangareader = Site{
 		/* <img id="img" src=[URL] name="img"> */
 		imageURL, found := doc.Find("#img").Attr("src")
 		if !found {
-			log.Panic("image not found")
+			log.Fatal("image not found")
 		}
 		return imageURL
 	},
@@ -77,21 +77,21 @@ func (d DownloadResults) Swap(i int, j int) {
 
 func downloadImage(url string) []byte {
 	for retry := 1; retry <= 3; retry++ {
-	/* open url */
-	response, e := http.Get(url)
-	if e != nil {
+		/* open url */
+		response, e := http.Get(url)
+		if e != nil {
 			log.Println("Error getting", url, "retrying...", retry)
 			continue
-	}
-	defer response.Body.Close()
+		}
+		defer response.Body.Close()
 
-	/* download image data ([]byte) from url */
-	data, err := ioutil.ReadAll(response.Body)
-	if err != nil {
-		log.Fatalf("ioutil.ReadAll -> %v", err)
+		/* download image data ([]byte) from url */
+		data, err := ioutil.ReadAll(response.Body)
+		if err != nil {
+			log.Fatalf("ioutil.ReadAll -> %v", err)
+		}
+		return data
 	}
-	return data
-}
 	log.Fatal("Error downloading image after 3 retries:", url)
 	return nil
 }
@@ -107,14 +107,14 @@ func createCBZ(cbzName string, files DownloadResults) {
 	// Create a buffer to write our archive to.
 	buf, createErr := os.Create(cbzName)
 	if createErr != nil {
-		log.Panic(createErr)
+		log.Fatal(createErr)
 	}
 
 	// Create a new zip archive.
 	w := zip.NewWriter(buf)
 
 	// Add some files to the archive.
-	fmt.Print("Creating cbz ")
+	log.Print("Creating cbz ")
 	for _, file := range files {
 		f, err := w.Create(file.Name)
 		if err != nil {
@@ -124,9 +124,7 @@ func createCBZ(cbzName string, files DownloadResults) {
 		if err != nil {
 			log.Fatal(err)
 		}
-		fmt.Print(".")
 	}
-	fmt.Println("done")
 
 	// Make sure to check the error on Close.
 	err := w.Close()
@@ -168,7 +166,7 @@ func downloadPage(n int, jobs <-chan DownloadJob, results chan<- DownloadResult)
 		imageBytes := downloadImage(imageURL)
 
 		/* send downloaded page to result channel */
-		fmt.Printf("Worker %d: %+v done\n", n, job)
+		log.Printf("Worker %d: %+v done\n", n, job)
 		results <- DownloadResult{fmt.Sprintf("image-%03d-%03d.jpg", job.Chapter, job.Page), imageBytes}
 	}
 }
@@ -212,7 +210,7 @@ func downloadChapter(site, manga string, chapters <-chan int, output chan<- Down
 		}
 		output <- downloadedImages
 
-		fmt.Println("Chapter", chapter, "done")
+		log.Println("Chapter", chapter, "done")
 	}
 }
 
@@ -249,19 +247,22 @@ func downloadChapters(site, manga string, fromChapter, toChapter, numChapterWork
 func main() {
 	startTime := time.Now()
 
+	parChapters := 6
+	parPages := 6
+
 	args := os.Args[1:]
 
 	if len(args) < 3 {
-		log.Panic("Need <name> <from> <to> parameters")
+		log.Fatal("Need <name> <from> <to> parameters")
 	}
 	manga := args[0]
 	from, _ := strconv.Atoi(args[1])
 	to, _ := strconv.Atoi(args[2])
 
-	fmt.Println(manga, from, to)
+	log.Println(manga, from, to)
 
 	mangareader := "http://www.mangareader.net"
-	downloadChapters(mangareader, manga, from, to, 6, 6)
+	downloadChapters(mangareader, manga, from, to, parChapters, parPages)
 
-	fmt.Println("Elapsed time:", time.Since(startTime))
+	log.Println("Elapsed time:", time.Since(startTime))
 }
