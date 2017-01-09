@@ -116,11 +116,19 @@ func createCBZ(cbzName string, files DownloadResults) {
 	// Add some files to the archive.
 	log.Print("Creating cbz ")
 	for _, file := range files {
-		f, err := w.Create(file.Name)
+
+		/* create zip writer with header of filename, STORE method, and current time */
+		header := zip.FileHeader{
+			Name:   file.Name,
+			Method: zip.Store}
+		header.SetModTime(time.Now())
+		f, err := w.CreateHeader(&header)
 		if err != nil {
 			log.Fatal(err)
 		}
-		_, err = f.Write([]byte(file.Content))
+
+		/* write downloaded content to zip archive */
+		_, err = f.Write(file.Content)
 		if err != nil {
 			log.Fatal(err)
 		}
