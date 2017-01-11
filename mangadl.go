@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"strconv"
+	"sync"
 
 	"time"
 
@@ -60,27 +61,13 @@ type DownloadResult struct {
 	Content []byte
 }
 
-// DownloadResults ...
-type DownloadResults []DownloadResult
-
-func (d DownloadResults) Len() int {
-	return len(d)
-}
-
-func (d DownloadResults) Less(i int, j int) bool {
-	return d[i].Name < d[j].Name
-}
-
-func (d DownloadResults) Swap(i int, j int) {
-	d[i], d[j] = d[j], d[i]
-}
-
 func downloadImage(url string) []byte {
 	for retry := 1; retry <= 3; retry++ {
 		/* open url */
 		response, e := http.Get(url)
 		if e != nil {
 			log.Println("Error getting", url, "retrying...", retry)
+			time.Sleep(time.Second)
 			continue
 		}
 		defer response.Body.Close()
@@ -96,70 +83,64 @@ func downloadImage(url string) []byte {
 	return nil
 }
 
-func dumpImage(outfile string, imageBytes []byte) {
-	writeErr := ioutil.WriteFile(outfile, imageBytes, 0644)
-	if writeErr != nil {
-		log.Fatal(writeErr)
-	}
-}
-
-func createCBZ(cbzName string, files DownloadResults) {
-	// Create a buffer to write our archive to.
+func createCBZchan(cbzName string, downloadedPages <-chan DownloadResult, wgCBZ *sync.WaitGroup) {
+	/* create the zip file */
 	buf, createErr := os.Create(cbzName)
 	if createErr != nil {
 		log.Fatal(createErr)
 	}
+	zipWriter := zip.NewWriter(buf)
+	log.Println("Creating cbz:", cbzName)
 
-	// Create a new zip archive.
-	w := zip.NewWriter(buf)
-
-	// Add some files to the archive.
-	log.Print("Creating cbz ")
-	for _, file := range files {
-
-		/* create zip writer with header of filename, STORE method, and current time */
+	/* write to zipfile as each finished page arrives in channel */
+	for file := range downloadedPages {
+		/* create zip writer with header of filename, DEFLATE method, and current time */
 		header := zip.FileHeader{
 			Name:   file.Name,
-			Method: zip.Store}
+			Method: zip.Deflate}
 		header.SetModTime(time.Now())
-		f, err := w.CreateHeader(&header)
+		f, err := zipWriter.CreateHeader(&header)
 		if err != nil {
 			log.Fatal(err)
 		}
 
-		/* write downloaded content to zip archive */
+		/* write content to zip archive */
 		_, err = f.Write(file.Content)
 		if err != nil {
 			log.Fatal(err)
 		}
 	}
 
-	// Make sure to check the error on Close.
-	err := w.Close()
+	/* close the archive */
+	err := zipWriter.Close()
 	if err != nil {
 		log.Fatal(err)
 	}
+	log.Println(cbzName, "closed")
+
+	/* signal to downloadChapters that all writes are done and the archive is closed */
+	wgCBZ.Done()
 }
 
-func getFirstPage(baseurl string, chapter int) (<-chan string, []byte) {
+func getFirstPage(site, baseurl string, chapter int) (<-chan string, []byte) {
 	/* get first page html */
-	url := fmt.Sprintf("%s/%d", baseurl, chapter)
+	url := fmt.Sprintf("%s/%d", baseurl, chapter) // TODO this is still site-specific
 	doc, err := goquery.NewDocument(url)
 	if err != nil {
 		log.Fatal(err)
 	}
 
 	/* get first page image */
-	pageImageURL := sites["mangareader"].img(doc)
+	pageImageURL := sites[site].img(doc)
 	pageImageBytes := downloadImage(pageImageURL)
 
 	/* get all pages links */
-	links := sites["mangareader"].pageList(doc)
+	links := sites[site].pageList(doc)
 
 	return links, pageImageBytes
 }
 
-func downloadPage(n int, jobs <-chan DownloadJob, results chan<- DownloadResult) {
+func downloadPage(n int, site string, jobs <-chan DownloadJob, downloadedPages chan<- DownloadResult, wgPages *sync.WaitGroup) {
 	for job := range jobs {
 		/* download html -- job.Link */
 		doc, err := goquery.NewDocument(job.Link)
@@ -168,57 +149,67 @@ func downloadPage(n int, jobs <-chan DownloadJob, results chan<- DownloadResult)
 		}
 
 		/* get image url */
-		imageURL := sites["mangareader"].img(doc)
+		imageURL := sites[site].img(doc)
 
 		/* download jpg */
 		imageBytes := downloadImage(imageURL)
 
 		/* send downloaded page to result channel */
-		log.Printf("Worker %d: %+v done\n", n, job)
-		results <- DownloadResult{fmt.Sprintf("image-%03d-%03d.jpg", job.Chapter, job.Page), imageBytes}
+		log.Printf("Chapter %d, Page %d done", job.Chapter, job.Page)
+		downloadedPages <- DownloadResult{fmt.Sprintf("image-%03d-%03d.jpg", job.Chapter, job.Page), imageBytes}
+
+		/* signal to downloadChapter that this page is done */
+		wgPages.Done()
 	}
 }
 
-func downloadChapter(site, manga string, chapters <-chan int, output chan<- DownloadResults, numWorkers int) {
+func downloadChapter(site, manga string, chapters <-chan int, downloadedPages chan<- DownloadResult, numWorkers int, wgChapter *sync.WaitGroup) {
 	for chapter := range chapters {
 
-		baseurl := site + "/" + manga
+		baseurl := sites[site].url + "/" + manga
 
 		/* get the first page & page list of the chapter */
 		var pages []string
-		links, pageImageBytes := getFirstPage(baseurl, chapter)
-		for link := range links {
-			pages = append(pages, site+link)
-		}
+		links, pageImageBytes := getFirstPage(site, baseurl, chapter)
 
-		/* make channels */
-		jobs := make(chan DownloadJob)
-		results := make(chan DownloadResult, len(pages))
-
-		/* create workers */
-		for i := 1; i <= numWorkers; i++ {
-			go downloadPage(i, jobs, results)
-		}
-
-		/* send jobs to worker channel, and close the channel */
-		for i := 1; i < len(pages); i++ {
-			jobs <- DownloadJob{chapter, i, pages[i]}
-		}
-		close(jobs)
-
-		/* get the first page image */
+		/* send the first page to the results channel */
 		firstPageName := fmt.Sprintf("image-%03d-000.jpg", chapter)
 		firstPageContent := pageImageBytes
 		firstPage := DownloadResult{firstPageName, firstPageContent}
-		downloadedImages := DownloadResults{firstPage}
+		downloadedPages <- firstPage
 
-		/* gather results from worker result channel */
-		for i := 1; i < len(pages); i++ {
-			downloadedImages = append(downloadedImages, <-results)
+		/* gather the page html links from the links channel */
+		for link := range links {
+			pages = append(pages, sites[site].url+link)
 		}
-		output <- downloadedImages
 
+		/* channel for pages to download */
+		jobs := make(chan DownloadJob)
+
+		/* create pages waitgroup */
+		var wgPages sync.WaitGroup
+		wgPages.Add(len(pages) - 1) // first page is already done
+
+		/* create workers */
+		for i := 1; i <= numWorkers; i++ {
+			go downloadPage(i, site, jobs, downloadedPages, &wgPages)
+		}
+
+		/* send jobs to worker channel, and close the channel */
+		go func() {
+			/* starting from the 2nd page onwards */
+			for i := 1; i < len(pages); i++ {
+				jobs <- DownloadJob{chapter, i, pages[i]}
+			}
+			close(jobs)
+		}()
+
+		/* wait until all pages are downloaded */
+		wgPages.Wait()
+
+		/* signal to downloadChapters that this chapter is done */
 		log.Println("Chapter", chapter, "done")
+		wgChapter.Done()
 	}
 }
 
@@ -226,30 +217,45 @@ func downloadChapters(site, manga string, fromChapter, toChapter, numChapterWork
 	/* get number of chapters from command line */
 	numChapters := toChapter - fromChapter + 1 // +1 to include the starting chapter
 
-	/* make channels */
+	/* channel for chapters to be downloaded */
 	chaptersJob := make(chan int)
-	downloadedChapter := make(chan DownloadResults, numChapters)
+
+	/* channel for downloaded pages */
+	downloadedPages := make(chan DownloadResult)
+
+	/* create waitgroup for chapter download work */
+	var wgChapter sync.WaitGroup
+	wgChapter.Add(numChapters)
 
 	/* make workers */
 	for i := 1; i <= numChapterWorkers; i++ {
-		go downloadChapter(site, manga, chaptersJob, downloadedChapter, numPageWorkers)
+		go downloadChapter(site, manga, chaptersJob, downloadedPages, numPageWorkers, &wgChapter)
 	}
 
 	/* send jobs to worker channel, and close the channel */
-	for i := fromChapter; i <= toChapter; i++ {
-		chaptersJob <- i
-	}
-	close(chaptersJob)
+	go func() {
+		for i := fromChapter; i <= toChapter; i++ {
+			chaptersJob <- i
+		}
+		close(chaptersJob)
+	}()
 
-	/* gather results from worker result channel */
-	var results DownloadResults
-	for i := 1; i <= numChapters; i++ {
-		results = append(results, <-downloadedChapter...)
-	}
-
-	/* put results into cbz file */
+	/* send downloaded pages to cbz writer */
+	var wgCBZ sync.WaitGroup
+	wgCBZ.Add(1)
 	cbzFile := fmt.Sprintf("%s-%03d-%03d.cbz", manga, fromChapter, toChapter)
-	createCBZ(cbzFile, results)
+	go createCBZchan(cbzFile, downloadedPages, &wgCBZ)
+
+	/* wait for all chapter downloads */
+	wgChapter.Wait()
+
+	/* close the results channel, signaling createCBZchan process to clean up & terminate */
+	close(downloadedPages)
+
+	log.Println("All chapters done")
+
+	/* wait until createCBZchan finished cleanly */
+	wgCBZ.Wait()
 }
 
 func main() {
@@ -269,8 +275,8 @@ func main() {
 
 	log.Println(manga, from, to)
 
-	mangareader := "http://www.mangareader.net"
-	downloadChapters(mangareader, manga, from, to, parChapters, parPages)
+	site := "mangareader"
+	downloadChapters(site, manga, from, to, parChapters, parPages)
 
 	log.Println("Elapsed time:", time.Since(startTime))
 }
