@@ -8,7 +8,14 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+
+	"github.com/PuerkitoBio/goquery"
 )
+
+var mockmanga = Site{
+	url:      "http://localhost:54321",
+	img:      func(*goquery.Document) string { return "" },
+	pageList: func(*goquery.Document) <-chan string { return nil }}
 
 func TestHttpTest(t *testing.T) {
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
