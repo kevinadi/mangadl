@@ -17,36 +17,78 @@ import (
 
 // Site definition ...
 type Site struct {
-	url      string
-	img      func(*goquery.Document) string
-	pageList func(*goquery.Document) <-chan string
+	url         string
+	img         func(*goquery.Document) string
+	pageList    func(string, int, *goquery.Document) <-chan string
+	page        func(string) string
+	chapter     func(int) string
+	parChapters int
+	parPages    int
 }
 
 var mangareader = Site{
-	url: "http://www.mangareader.net",
+	url: "http://www.mangareader.net/",
 	img: func(doc *goquery.Document) string {
 		/* <img id="img" src=[URL] name="img"> */
 		imageURL, found := doc.Find("#img").Attr("src")
 		if !found {
-			log.Fatal("image not found")
+			log.Fatal("image not found: ", doc.Url.String())
 		}
 		return imageURL
 	},
-	pageList: func(doc *goquery.Document) <-chan string {
+	pageList: func(manga string, chapter int, doc *goquery.Document) <-chan string {
 		/* <option value=[pagelist]> */
 		links := make(chan string)
 		go func() {
 			doc.Find("option").Each(func(i int, s *goquery.Selection) {
 				link, _ := s.Attr("value")
-				links <- link
+				links <- link[1:] // link contains leading slash
 			})
 			close(links)
 		}()
 		return links
-	}}
+	},
+	page:        func(n string) string { return fmt.Sprintf("/%s", n) },
+	chapter:     func(n int) string { return fmt.Sprintf("/%d", n) },
+	parChapters: 6,
+	parPages:    6}
+
+var mangafox = Site{
+	url: "http://mangafox.me/manga/",
+	img: func(doc *goquery.Document) string {
+		imageURL, found := doc.Find("#image").Attr("src")
+		if !found {
+			fmt.Println(doc.Html())
+			log.Fatal("image not found: ", doc.Url.String())
+		}
+		return imageURL
+	},
+	pageList: func(manga string, chapter int, doc *goquery.Document) <-chan string {
+		chp := func(n int) string { return fmt.Sprintf("/c%03d", n) }
+		page := func(n string) string { return fmt.Sprintf("/%s.html", n) }
+		links := make(chan string)
+		go func() {
+			doc.Find("option").EachWithBreak(func(i int, s *goquery.Selection) bool {
+				val, _ := s.Attr("value")
+				if val == "0" {
+					return false
+				}
+				link := manga + chp(chapter) + page(val)
+				links <- link
+				return true
+			})
+			close(links)
+		}()
+		return links
+	},
+	page:        func(n string) string { return fmt.Sprintf("/%s.html", n) },
+	chapter:     func(n int) string { return fmt.Sprintf("/c%03d", n) },
+	parChapters: 1,
+	parPages:    1}
 
 var sites = map[string]Site{
-	"mangareader": mangareader}
+	"mangareader": mangareader,
+	"mangafox":    mangafox}
 
 // DownloadJob ...
 type DownloadJob struct {
@@ -122,11 +164,19 @@ func createCBZchan(cbzName string, downloadedPages <-chan DownloadResult, wgCBZ 
 	wgCBZ.Done()
 }
 
-func getFirstPage(site, baseurl string, chapter int) (<-chan string, []byte) {
+func getFirstPage(site, manga, baseurl string, chapter int) (<-chan string, []byte) {
 	/* get first page html */
-	url := fmt.Sprintf("%s/%d", baseurl, chapter) // TODO this is still site-specific
-	doc, err := goquery.NewDocument(url)
+	url := sites[site].url + manga + sites[site].chapter(chapter) + sites[site].page("1")
+
+	resp, errget := http.Get(url)
+	if errget != nil {
+		log.Fatal("Error getting ", url)
+	}
+	defer resp.Body.Close()
+
+	doc, err := goquery.NewDocumentFromResponse(resp)
 	if err != nil {
+		log.Println(doc.Html())
 		log.Fatal(err)
 	}
 
@@ -135,7 +185,7 @@ func getFirstPage(site, baseurl string, chapter int) (<-chan string, []byte) {
 	pageImageBytes := downloadImage(pageImageURL)
 
 	/* get all pages links */
-	links := sites[site].pageList(doc)
+	links := sites[site].pageList(manga, chapter, doc)
 
 	return links, pageImageBytes
 }
@@ -143,7 +193,13 @@ func getFirstPage(site, baseurl string, chapter int) (<-chan string, []byte) {
 func downloadPage(n int, site string, jobs <-chan DownloadJob, downloadedPages chan<- DownloadResult, wgPages *sync.WaitGroup) {
 	for job := range jobs {
 		/* download html -- job.Link */
-		doc, err := goquery.NewDocument(job.Link)
+		resp, errget := http.Get(job.Link)
+		if errget != nil {
+			log.Fatal("Error getting ", job.Link)
+		}
+		defer resp.Body.Close()
+
+		doc, err := goquery.NewDocumentFromResponse(resp)
 		if err != nil {
 			log.Fatal(err)
 		}
@@ -166,11 +222,11 @@ func downloadPage(n int, site string, jobs <-chan DownloadJob, downloadedPages c
 func downloadChapter(site, manga string, chapters <-chan int, downloadedPages chan<- DownloadResult, numWorkers int, wgChapter *sync.WaitGroup) {
 	for chapter := range chapters {
 
-		baseurl := sites[site].url + "/" + manga
+		baseurl := sites[site].url + manga
 
 		/* get the first page & page list of the chapter */
 		var pages []string
-		links, pageImageBytes := getFirstPage(site, baseurl, chapter)
+		links, pageImageBytes := getFirstPage(site, manga, baseurl, chapter)
 
 		/* send the first page to the results channel */
 		firstPageName := fmt.Sprintf("image-%03d-000.jpg", chapter)
@@ -261,21 +317,23 @@ func downloadChapters(site, manga string, fromChapter, toChapter, numChapterWork
 func main() {
 	startTime := time.Now()
 
-	parChapters := 6
-	parPages := 6
-
 	args := os.Args[1:]
 
 	if len(args) < 3 {
-		log.Fatal("Need <name> <from> <to> parameters")
+		log.Fatal("Need <site> <name> <from> <to> parameters")
 	}
-	manga := args[0]
-	from, _ := strconv.Atoi(args[1])
-	to, _ := strconv.Atoi(args[2])
 
+	site := args[0]
+	manga := args[1]
+	from, _ := strconv.Atoi(args[2])
+	to, _ := strconv.Atoi(args[3])
+
+	parChapters := sites[site].parChapters
+	parPages := sites[site].parPages
+
+	log.Println("Parallel chapters:", parChapters, ", parallel pages:", parPages)
 	log.Println(manga, from, to)
 
-	site := "mangareader"
 	downloadChapters(site, manga, from, to, parChapters, parPages)
 
 	log.Println("Elapsed time:", time.Since(startTime))
