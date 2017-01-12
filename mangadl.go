@@ -164,7 +164,7 @@ func createCBZchan(cbzName string, downloadedPages <-chan DownloadResult, wgCBZ 
 	wgCBZ.Done()
 }
 
-func getFirstPage(site, manga, baseurl string, chapter int) (<-chan string, []byte) {
+func getFirstPage(site, manga, baseurl string, chapter int) ([]string, []byte) {
 	/* get first page html */
 	url := sites[site].url + manga + sites[site].chapter(chapter) + sites[site].page("1")
 
@@ -185,14 +185,17 @@ func getFirstPage(site, manga, baseurl string, chapter int) (<-chan string, []by
 	pageImageBytes := downloadImage(pageImageURL)
 
 	/* get all pages links */
-	links := sites[site].pageList(manga, chapter, doc)
+	var links []string
+	for link := range sites[site].pageList(manga, chapter, doc) {
+		links = append(links, sites[site].url+link)
+	}
 
 	return links, pageImageBytes
 }
 
 func downloadPage(n int, site string, jobs <-chan DownloadJob, downloadedPages chan<- DownloadResult, wgPages *sync.WaitGroup) {
 	for job := range jobs {
-		/* download html -- job.Link */
+		/* download page html -- job.Link */
 		resp, errget := http.Get(job.Link)
 		if errget != nil {
 			log.Fatal("Error getting ", job.Link)
@@ -224,8 +227,7 @@ func downloadChapter(site, manga string, chapters <-chan int, downloadedPages ch
 
 		baseurl := sites[site].url + manga
 
-		/* get the first page & page list of the chapter */
-		var pages []string
+		/* get the first page & page links of the chapter */
 		links, pageImageBytes := getFirstPage(site, manga, baseurl, chapter)
 
 		/* send the first page to the results channel */
@@ -234,31 +236,26 @@ func downloadChapter(site, manga string, chapters <-chan int, downloadedPages ch
 		firstPage := DownloadResult{firstPageName, firstPageContent}
 		downloadedPages <- firstPage
 
-		/* gather the page html links from the links channel */
-		for link := range links {
-			pages = append(pages, sites[site].url+link)
-		}
-
+		/** pages job producer **/
 		/* channel for pages to download */
 		jobs := make(chan DownloadJob)
+		/* send jobs to worker channel, and close the channel */
+		go func() {
+			/* starting from the 2nd page onwards */
+			for i := 1; i < len(links); i++ {
+				jobs <- DownloadJob{chapter, i, links[i]}
+			}
+			close(jobs)
+		}()
 
+		/** pages workers **/
 		/* create pages waitgroup */
 		var wgPages sync.WaitGroup
-		wgPages.Add(len(pages) - 1) // first page is already done
-
+		wgPages.Add(len(links) - 1) // first page is already done
 		/* create workers */
 		for i := 1; i <= numWorkers; i++ {
 			go downloadPage(i, site, jobs, downloadedPages, &wgPages)
 		}
-
-		/* send jobs to worker channel, and close the channel */
-		go func() {
-			/* starting from the 2nd page onwards */
-			for i := 1; i < len(pages); i++ {
-				jobs <- DownloadJob{chapter, i, pages[i]}
-			}
-			close(jobs)
-		}()
 
 		/* wait until all pages are downloaded */
 		wgPages.Wait()
