@@ -316,22 +316,29 @@ func main() {
 
 	args := os.Args[1:]
 
-	if len(args) < 3 {
-		log.Fatal("Need <site> <name> <from> <to> parameters")
+	switch args[0] {
+
+	case "combine":
+		combine()
+
+	default:
+		if len(args) < 3 {
+			log.Fatal("Need <site> <name> <from> <to> parameters")
+		}
+
+		site := args[0]
+		manga := args[1]
+		from, _ := strconv.Atoi(args[2])
+		to, _ := strconv.Atoi(args[3])
+
+		parChapters := sites[site].parChapters
+		parPages := sites[site].parPages
+
+		log.Println("Parallel chapters:", parChapters, ", parallel pages:", parPages)
+		log.Println(manga, from, to)
+
+		downloadChapters(site, manga, from, to, parChapters, parPages)
 	}
-
-	site := args[0]
-	manga := args[1]
-	from, _ := strconv.Atoi(args[2])
-	to, _ := strconv.Atoi(args[3])
-
-	parChapters := sites[site].parChapters
-	parPages := sites[site].parPages
-
-	log.Println("Parallel chapters:", parChapters, ", parallel pages:", parPages)
-	log.Println(manga, from, to)
-
-	downloadChapters(site, manga, from, to, parChapters, parPages)
 
 	log.Println("Elapsed time:", time.Since(startTime))
 }
