@@ -157,7 +157,7 @@ func createCBZchan(cbzName string, downloadedPages <-chan DownloadResult, wgCBZ 
 	wgCBZ.Done()
 }
 
-func getFirstPage(site, manga, baseurl string, chapter int) ([]string, []byte) {
+func getFirstPage(site, manga string, chapter int) ([]string, []byte) {
 	/* get first page html */
 	url := sites[site].url + manga + sites[site].chapter(chapter) + sites[site].page("1")
 
@@ -214,11 +214,8 @@ func downloadPage(n int, site string, jobs <-chan DownloadJob, downloadedPages c
 
 func downloadChapter(site, manga string, chapters <-chan int, downloadedPages chan<- DownloadResult, numWorkers int, wgChapter *sync.WaitGroup) {
 	for chapter := range chapters {
-
-		baseurl := sites[site].url + manga
-
 		/* get the first page & page links of the chapter */
-		links, pageImageBytes := getFirstPage(site, manga, baseurl, chapter)
+		links, pageImageBytes := getFirstPage(site, manga, chapter)
 
 		/* send the first page to the results channel */
 		firstPageName := fmt.Sprintf("image-%03d-000.jpg", chapter)
