@@ -19,7 +19,7 @@ import (
 type Site struct {
 	url         string
 	img         func(*goquery.Document) string
-	pageList    func(string, int, *goquery.Document) <-chan string
+	pageList    func(string, int, *goquery.Document) []string
 	page        func(string) string
 	chapter     func(int) string
 	parChapters int
@@ -36,16 +36,14 @@ var mangareader = Site{
 		}
 		return imageURL
 	},
-	pageList: func(manga string, chapter int, doc *goquery.Document) <-chan string {
+	pageList: func(manga string, chapter int, doc *goquery.Document) []string {
 		/* <option value=[pagelist]> */
-		links := make(chan string)
-		go func() {
-			doc.Find("option").Each(func(i int, s *goquery.Selection) {
-				link, _ := s.Attr("value")
-				links <- link[1:] // link contains leading slash
-			})
-			close(links)
-		}()
+		var links []string
+		doc.Find("option").Each(func(i int, s *goquery.Selection) {
+			link, _ := s.Attr("value")
+			formattedLink := fmt.Sprintf("%s://%s%s", doc.Url.Scheme, doc.Url.Host, link)
+			links = append(links, formattedLink)
+		})
 		return links
 	},
 	page:        func(n string) string { return fmt.Sprintf("/%s", n) },
@@ -63,22 +61,17 @@ var mangafox = Site{
 		}
 		return imageURL
 	},
-	pageList: func(manga string, chapter int, doc *goquery.Document) <-chan string {
-		chp := func(n int) string { return fmt.Sprintf("/c%03d", n) }
-		page := func(n string) string { return fmt.Sprintf("/%s.html", n) }
-		links := make(chan string)
-		go func() {
-			doc.Find("option").EachWithBreak(func(i int, s *goquery.Selection) bool {
-				val, _ := s.Attr("value")
-				if val == "0" {
-					return false
-				}
-				link := manga + chp(chapter) + page(val)
-				links <- link
-				return true
-			})
-			close(links)
-		}()
+	pageList: func(manga string, chapter int, doc *goquery.Document) []string {
+		var links []string
+		doc.Find("option").EachWithBreak(func(i int, s *goquery.Selection) bool {
+			val, _ := s.Attr("value")
+			if val == "0" {
+				return false
+			}
+			link := fmt.Sprintf("%s://%s/manga/%s/c%03d/%s.html", doc.Url.Scheme, doc.Url.Host, manga, chapter, val)
+			links = append(links, link)
+			return true
+		})
 		return links
 	},
 	page:        func(n string) string { return fmt.Sprintf("/%s.html", n) },
@@ -185,10 +178,7 @@ func getFirstPage(site, manga, baseurl string, chapter int) ([]string, []byte) {
 	pageImageBytes := downloadImage(pageImageURL)
 
 	/* get all pages links */
-	var links []string
-	for link := range sites[site].pageList(manga, chapter, doc) {
-		links = append(links, sites[site].url+link)
-	}
+	links := sites[site].pageList(manga, chapter, doc)
 
 	return links, pageImageBytes
 }
