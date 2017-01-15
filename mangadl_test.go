@@ -88,20 +88,50 @@ func TestGetFirstPage(t *testing.T) {
 func TestDownloadPage(t *testing.T) {
 	sites["mockmanga"] = mockmanga
 
-	dljob := make(chan DownloadJob, 1)
+	dljob := make(chan DownloadJob, 3)
 	dljob <- DownloadJob{
 		Chapter: 1,
 		Page:    1,
 		Link:    tsPage.URL}
+	dljob <- DownloadJob{
+		Chapter: 1,
+		Page:    2,
+		Link:    tsPage.URL}
+	dljob <- DownloadJob{
+		Chapter: 2,
+		Page:    1,
+		Link:    tsPage.URL}
 	close(dljob)
-	result := make(chan DownloadResult, 1)
+	result := make(chan DownloadResult, 3)
 	var wg sync.WaitGroup
-	wg.Add(1)
-	downloadPage(1, "mockmanga", dljob, result, &wg)
-	// wg.Wait()
+	wg.Add(3)
+
+	go downloadPage(1, "mockmanga", dljob, result, &wg)
+	wg.Wait()
+
 	got := <-result
 	expect := DownloadResult{
 		Name:    "image-001-001.jpg",
+		Content: []byte("Image")}
+	if !reflect.DeepEqual(got, expect) {
+		fmt.Printf("Got: %s\n", got)
+		fmt.Printf("Expect: %s\n", expect)
+		t.Fail()
+	}
+
+	got = <-result
+	expect = DownloadResult{
+		Name:    "image-001-002.jpg",
+		Content: []byte("Image")}
+	if !reflect.DeepEqual(got, expect) {
+		fmt.Printf("Got: %s\n", got)
+		fmt.Printf("Expect: %s\n", expect)
+		t.Fail()
+	}
+
+	got = <-result
+	expect = DownloadResult{
+		Name:    "image-002-001.jpg",
 		Content: []byte("Image")}
 	if !reflect.DeepEqual(got, expect) {
 		fmt.Printf("Got: %s\n", got)
