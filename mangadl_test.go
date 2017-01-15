@@ -11,6 +11,8 @@ import (
 
 	"reflect"
 
+	"sync"
+
 	"github.com/PuerkitoBio/goquery"
 )
 
@@ -79,6 +81,31 @@ func TestGetFirstPage(t *testing.T) {
 	if bytes.Compare(pageImageBytes, expectImage) != 0 {
 		fmt.Printf("Got: %s\n", pageImageBytes)
 		fmt.Printf("Expect: %s\n", expectImage)
+		t.Fail()
+	}
+}
+
+func TestDownloadPage(t *testing.T) {
+	sites["mockmanga"] = mockmanga
+
+	dljob := make(chan DownloadJob, 1)
+	dljob <- DownloadJob{
+		Chapter: 1,
+		Page:    1,
+		Link:    tsPage.URL}
+	close(dljob)
+	result := make(chan DownloadResult, 1)
+	var wg sync.WaitGroup
+	wg.Add(1)
+	downloadPage(1, "mockmanga", dljob, result, &wg)
+	// wg.Wait()
+	got := <-result
+	expect := DownloadResult{
+		Name:    "image-001-001.jpg",
+		Content: []byte("Image")}
+	if !reflect.DeepEqual(got, expect) {
+		fmt.Printf("Got: %s\n", got)
+		fmt.Printf("Expect: %s\n", expect)
 		t.Fail()
 	}
 }
