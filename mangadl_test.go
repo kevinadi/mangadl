@@ -9,21 +9,23 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"reflect"
+
 	"github.com/PuerkitoBio/goquery"
 )
 
 var tsImage = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-	fmt.Fprint(w, "Hello, client")
+	fmt.Fprint(w, "Image")
 }))
 
 var tsPage = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-	fmt.Fprintf(w, "<html><body><a href='%s'></body></html>", tsImage.URL)
+	fmt.Fprintf(w, "<html><body><img src='%s' id='image'></body></html>", tsImage.URL)
 }))
 
 var mockmanga = Site{
 	url:         tsPage.URL + "/",
-	img:         func(*goquery.Document) string { return "" },
-	pageList:    func(string, int, *goquery.Document) []string { return []string{""} },
+	img:         func(*goquery.Document) string { return tsImage.URL },
+	pageList:    func(string, int, *goquery.Document) []string { return []string{"link1", "link2", "link3"} },
 	page:        func(n string) string { return fmt.Sprintf("/%s", n) },
 	chapter:     func(n int) string { return fmt.Sprintf("/%d", n) },
 	parChapters: 1,
@@ -52,7 +54,7 @@ func TestHttpTest(t *testing.T) {
 
 func TestDownloadImage(t *testing.T) {
 	got := downloadImage(tsImage.URL)
-	expect := []byte("Hello, client")
+	expect := []byte("Image")
 
 	if bytes.Compare(got, expect) != 0 {
 		fmt.Printf("Got: %s\n", got)
@@ -65,6 +67,18 @@ func TestGetFirstPage(t *testing.T) {
 	sites["mockmanga"] = mockmanga
 
 	links, pageImageBytes := getFirstPage("mockmanga", "manga-name", 1)
-	fmt.Println(links)
-	fmt.Println(pageImageBytes)
+
+	expectLinks := []string{"link1", "link2", "link3"}
+	if !reflect.DeepEqual(links, expectLinks) {
+		fmt.Printf("Got: %s\n", links)
+		fmt.Printf("Expect: %s\n", expectLinks)
+		t.Fail()
+	}
+
+	expectImage := []byte("Image")
+	if bytes.Compare(pageImageBytes, expectImage) != 0 {
+		fmt.Printf("Got: %s\n", pageImageBytes)
+		fmt.Printf("Expect: %s\n", expectImage)
+		t.Fail()
+	}
 }
