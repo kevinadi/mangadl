@@ -12,10 +12,22 @@ import (
 	"github.com/PuerkitoBio/goquery"
 )
 
+var tsImage = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	fmt.Fprint(w, "Hello, client")
+}))
+
+var tsPage = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	fmt.Fprint(w, "Hello, client ", tsImage.URL)
+}))
+
 var mockmanga = Site{
-	url:      "http://localhost:54321",
-	img:      func(*goquery.Document) string { return "" },
-	pageList: func(string, int, *goquery.Document) []string { return []string{""} }}
+	url:         tsPage.URL + "/",
+	img:         func(*goquery.Document) string { return "" },
+	pageList:    func(string, int, *goquery.Document) []string { return []string{""} },
+	page:        func(n string) string { return fmt.Sprintf("/%s", n) },
+	chapter:     func(n int) string { return fmt.Sprintf("/%d", n) },
+	parChapters: 1,
+	parPages:    1}
 
 func TestHttpTest(t *testing.T) {
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -23,7 +35,9 @@ func TestHttpTest(t *testing.T) {
 	}))
 	defer ts.Close()
 
-	res, err := http.Get(ts.URL)
+	getURL := ts.URL + "/blah/blah_blah"
+	fmt.Println(getURL)
+	res, err := http.Get(getURL)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -33,22 +47,24 @@ func TestHttpTest(t *testing.T) {
 	if err != nil {
 		log.Fatal(err)
 	}
-
 	fmt.Printf("%s", greeting)
 }
 
 func TestDownloadImage(t *testing.T) {
-	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		fmt.Fprint(w, "Hello, client")
-	}))
-	defer ts.Close()
-
-	out := downloadImage(ts.URL)
+	got := downloadImage(tsImage.URL)
 	expect := []byte("Hello, client")
 
-	if bytes.Compare(out, expect) != 0 {
-		fmt.Println(out)
-		fmt.Println(expect)
+	if bytes.Compare(got, expect) != 0 {
+		fmt.Printf("Got: %s\n", got)
+		fmt.Printf("Expect: %s\n", expect)
 		t.Fail()
 	}
+}
+
+func TestGetFirstPage(t *testing.T) {
+	sites["mockmanga"] = mockmanga
+
+	links, pageImageBytes := getFirstPage("mockmanga", "manga-name", 1)
+	fmt.Println(links)
+	fmt.Println(pageImageBytes)
 }
