@@ -17,7 +17,7 @@ var tsImage = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r 
 }))
 
 var tsPage = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-	fmt.Fprint(w, "Hello, client ", tsImage.URL)
+	fmt.Fprintf(w, "<html><body><a href='%s'></body></html>", tsImage.URL)
 }))
 
 var mockmanga = Site{
