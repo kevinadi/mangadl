@@ -152,7 +152,7 @@ func cbzChan(buf *bufio.Writer, downloadedPages <-chan DownloadResult, wgCBZ *sy
 	zipWriter := zip.NewWriter(buf)
 
 	/* write to archive as each finished page arrives in channel */
-	pageCount := 0
+	pageCount := 1
 	for file := range downloadedPages {
 		/* create zip writer with header of filename, DEFLATE method, and current time */
 		header := zip.FileHeader{
