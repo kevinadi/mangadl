@@ -79,17 +79,6 @@ func TestHttptestServers(t *testing.T) {
 	}
 }
 
-func TestMockImage(t *testing.T) {
-	imgResp, _ := http.Get(tsImage.URL)
-	imgBytes, _ := ioutil.ReadAll(imgResp.Body)
-	expectBytes := []byte("Image")
-	if !reflect.DeepEqual(imgBytes, expectBytes) {
-		fmt.Printf("Got: %v\n", imgBytes)
-		fmt.Printf("Expect: %v\n", expectBytes)
-		t.Fail()
-	}
-}
-
 func TestMockPage(t *testing.T) {
 	resp, _ := http.Get(tsPage.URL)
 	doc, _ := goquery.NewDocumentFromResponse(resp)
