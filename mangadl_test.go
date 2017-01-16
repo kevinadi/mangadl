@@ -2,10 +2,10 @@ package main
 
 import (
 	"fmt"
-	"io/ioutil"
-	"log"
+	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"testing"
 
 	"reflect"
@@ -15,42 +15,54 @@ import (
 	"github.com/PuerkitoBio/goquery"
 )
 
+/* manga containing 3 pages */
+var pageHTML = `
+<html>
+<body>
+<option value="/page1">1</option>
+<option value="/page2">2</option>
+<option value="/page3">3</option>
+<img src="%s" id="image">
+</body>
+</html>
+`
+
 var tsImage = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprint(w, "Image")
 }))
 
 var tsPage = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-	fmt.Fprintf(w, "<html><body><img src='%s' id='image'></body></html>", tsImage.URL)
+	fmt.Fprintf(w, pageHTML, tsImage.URL)
 }))
 
 var mockmanga = Site{
-	url:         tsPage.URL + "/",
-	img:         func(*goquery.Document) string { return tsImage.URL },
-	pageList:    func(string, int, *goquery.Document) []string { return []string{"link1", "link2", "link3"} },
+	url: tsPage.URL + "/",
+	img: func(doc *goquery.Document) string {
+		imageURL, _ := doc.Find("#image").Attr("src")
+		return imageURL
+	},
+	pageList: func(manga string, chapter int, doc *goquery.Document) []string {
+		var links []string
+		doc.Find("option").Each(func(i int, s *goquery.Selection) {
+			link, _ := s.Attr("value")
+			formattedLink := fmt.Sprintf("%s://%s%s", doc.Url.Scheme, doc.Url.Host, link)
+			links = append(links, formattedLink)
+		})
+		return links
+	},
 	page:        func(n string) string { return fmt.Sprintf("/%s", n) },
 	chapter:     func(n int) string { return fmt.Sprintf("/%d", n) },
 	parChapters: 1,
 	parPages:    1}
 
 func TestHttpTest(t *testing.T) {
-	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		fmt.Fprintln(w, "Hello, client")
-	}))
-	defer ts.Close()
-
-	getURL := ts.URL + "/blah/blah_blah"
-	fmt.Println(getURL)
-	res, err := http.Get(getURL)
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	greeting, err := ioutil.ReadAll(res.Body)
-	res.Body.Close()
-	if err != nil {
-		log.Fatal(err)
-	}
-	fmt.Printf("%s", greeting)
+	t.SkipNow()
+	fmt.Println("URL:", tsPage.URL)
+	res, _ := http.Get(tsPage.URL)
+	io.Copy(os.Stdout, res.Body)
+	fmt.Println("URL:", tsImage.URL)
+	res, _ = http.Get(tsImage.URL)
+	io.Copy(os.Stdout, res.Body)
 }
 
 func TestDownloadImage(t *testing.T) {
@@ -58,6 +70,7 @@ func TestDownloadImage(t *testing.T) {
 
 	expect := []byte("Image")
 	if !reflect.DeepEqual(got, expect) {
+		fmt.Printf("Image src: %s\n", tsImage.URL)
 		fmt.Printf("Got: %s\n", got)
 		fmt.Printf("Expect: %s\n", expect)
 		t.Fail()
@@ -69,7 +82,7 @@ func TestGetFirstPage(t *testing.T) {
 
 	links, pageImageBytes := getFirstPage("mockmanga", "manga-name", 1)
 
-	expectLinks := []string{"link1", "link2", "link3"}
+	expectLinks := []string{tsPage.URL + "/page1", tsPage.URL + "/page2", tsPage.URL + "/page3"}
 	if !reflect.DeepEqual(links, expectLinks) {
 		fmt.Printf("Got: %s\n", links)
 		fmt.Printf("Expect: %s\n", expectLinks)
@@ -136,6 +149,45 @@ func TestDownloadPage(t *testing.T) {
 	if !reflect.DeepEqual(got, expect) {
 		fmt.Printf("Got: %s\n", got)
 		fmt.Printf("Expect: %s\n", expect)
+		t.Fail()
+	}
+}
+
+func TestDownloadChapter(t *testing.T) {
+	sites["mockmanga"] = mockmanga
+	numChapters := 3
+
+	chapters := make(chan int, numChapters)
+	downloadedPages := make(chan DownloadResult, 3*numChapters)
+	var wg sync.WaitGroup
+
+	for i := 1; i <= numChapters; i++ {
+		chapters <- i
+	}
+	close(chapters)
+
+	wg.Add(numChapters)
+	go downloadChapter("mockmanga", "manga_test", chapters, downloadedPages, 1, &wg)
+	wg.Wait()
+	close(downloadedPages)
+
+	var expect []DownloadResult
+	for c := 1; c <= 3; c++ {
+		for p := 0; p <= 2; p++ {
+			expect = append(expect, DownloadResult{
+				Name:    fmt.Sprintf("image-%03d-%03d.jpg", c, p),
+				Content: []byte("Image")})
+		}
+	}
+
+	var got []DownloadResult
+	for p := range downloadedPages {
+		got = append(got, p)
+	}
+
+	if !reflect.DeepEqual(expect, got) {
+		fmt.Printf("Expect: %s\n", expect)
+		fmt.Printf("Got: %s\n", got)
 		t.Fail()
 	}
 }
