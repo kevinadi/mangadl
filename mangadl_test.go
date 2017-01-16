@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bytes"
 	"fmt"
 	"io/ioutil"
 	"log"
@@ -56,9 +55,9 @@ func TestHttpTest(t *testing.T) {
 
 func TestDownloadImage(t *testing.T) {
 	got := downloadImage(tsImage.URL)
-	expect := []byte("Image")
 
-	if bytes.Compare(got, expect) != 0 {
+	expect := []byte("Image")
+	if !reflect.DeepEqual(got, expect) {
 		fmt.Printf("Got: %s\n", got)
 		fmt.Printf("Expect: %s\n", expect)
 		t.Fail()
@@ -78,7 +77,7 @@ func TestGetFirstPage(t *testing.T) {
 	}
 
 	expectImage := []byte("Image")
-	if bytes.Compare(pageImageBytes, expectImage) != 0 {
+	if !reflect.DeepEqual(pageImageBytes, expectImage) {
 		fmt.Printf("Got: %s\n", pageImageBytes)
 		fmt.Printf("Expect: %s\n", expectImage)
 		t.Fail()
@@ -87,8 +86,9 @@ func TestGetFirstPage(t *testing.T) {
 
 func TestDownloadPage(t *testing.T) {
 	sites["mockmanga"] = mockmanga
+	numJobs := 3
 
-	dljob := make(chan DownloadJob, 3)
+	dljob := make(chan DownloadJob, numJobs)
 	dljob <- DownloadJob{
 		Chapter: 1,
 		Page:    1,
@@ -102,9 +102,9 @@ func TestDownloadPage(t *testing.T) {
 		Page:    1,
 		Link:    tsPage.URL}
 	close(dljob)
-	result := make(chan DownloadResult, 3)
+	result := make(chan DownloadResult, numJobs)
 	var wg sync.WaitGroup
-	wg.Add(3)
+	wg.Add(numJobs)
 
 	go downloadPage(1, "mockmanga", dljob, result, &wg)
 	wg.Wait()
