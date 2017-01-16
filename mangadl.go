@@ -3,6 +3,7 @@ package main
 import (
 	"archive/zip"
 	"fmt"
+	"io"
 	"io/ioutil"
 	"log"
 	"net/http"
@@ -11,8 +12,6 @@ import (
 	"sync"
 
 	"time"
-
-	"bufio"
 
 	"github.com/PuerkitoBio/goquery"
 )
@@ -128,13 +127,10 @@ func createCBZ(cbzName string, downloadedPages <-chan DownloadResult, wgFile *sy
 	}
 	log.Println("Creating cbz:", cbzName)
 
-	/* create buffered IO writer from file */
-	buf := bufio.NewWriter(file)
-
 	/* write to buffer from result channel */
 	var wgCBZ sync.WaitGroup
 	wgCBZ.Add(1)
-	go cbzChan(buf, downloadedPages, &wgCBZ)
+	go cbzChan(file, downloadedPages, &wgCBZ)
 	wgCBZ.Wait()
 
 	/* close the cbz file */
@@ -147,12 +143,11 @@ func createCBZ(cbzName string, downloadedPages <-chan DownloadResult, wgFile *sy
 	wgFile.Done()
 }
 
-func cbzChan(buf *bufio.Writer, downloadedPages <-chan DownloadResult, wgCBZ *sync.WaitGroup) {
+func cbzChan(writer io.Writer, downloadedPages <-chan DownloadResult, wgCBZ *sync.WaitGroup) {
 	/* create the zip archive from buffer */
-	zipWriter := zip.NewWriter(buf)
+	zipWriter := zip.NewWriter(writer)
 
 	/* write to archive as each finished page arrives in channel */
-	pageCount := 1
 	for file := range downloadedPages {
 		/* create zip writer with header of filename, DEFLATE method, and current time */
 		header := zip.FileHeader{
@@ -169,23 +164,15 @@ func cbzChan(buf *bufio.Writer, downloadedPages <-chan DownloadResult, wgCBZ *sy
 		if err != nil {
 			log.Fatal(err)
 		}
-
-		/* flush the write buffer every 10th page */
-		if pageCount%10 == 0 {
-			if flushErr := buf.Flush(); flushErr != nil {
-				log.Fatal(flushErr)
-			}
-		}
-		pageCount++
 	}
 
-	/* close the buffer */
+	/* close the archive */
 	err := zipWriter.Close()
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	/* signal to createCBZ that all writes are done and the buffer is closed */
+	/* signal to createCBZ that all writes are done and the archive is closed */
 	wgCBZ.Done()
 
 }
