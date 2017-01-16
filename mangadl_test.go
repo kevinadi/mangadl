@@ -12,6 +12,10 @@ import (
 
 	"io/ioutil"
 
+	"bytes"
+
+	"archive/zip"
+
 	"github.com/PuerkitoBio/goquery"
 )
 
@@ -229,6 +233,55 @@ func TestDownloadChapter(t *testing.T) {
 	if !reflect.DeepEqual(expect, got) {
 		fmt.Printf("Expect: %s\n", expect)
 		fmt.Printf("Got: %s\n", got)
+		t.Fail()
+	}
+}
+
+func TestCbzChan(t *testing.T) {
+	var buf bytes.Buffer
+
+	/* expected result */
+	expect := []DownloadResult{
+		DownloadResult{
+			Name:    "image-001-001.jpg",
+			Content: []byte("Image")},
+		DownloadResult{
+			Name:    "image-001-002.jpg",
+			Content: []byte("Image")},
+		DownloadResult{
+			Name:    "image-002-001.jpg",
+			Content: []byte("Image")}}
+
+	/* create, fill, and close results channel */
+	downloadedPages := make(chan DownloadResult, 3)
+	for _, res := range expect {
+		downloadedPages <- res
+	}
+	close(downloadedPages)
+
+	/* TEST */
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go cbzChan(&buf, downloadedPages, &wg)
+	wg.Wait()
+
+	/* read the result zip archive */
+	bufReader := bytes.NewReader(buf.Bytes())
+	archiveReader, _ := zip.NewReader(bufReader, int64(buf.Cap()))
+	var got []DownloadResult
+	for _, f := range archiveReader.File {
+		resName := f.Name
+		rc, _ := f.Open()
+		resContents, _ := ioutil.ReadAll(rc)
+		got = append(got, DownloadResult{
+			Name:    resName,
+			Content: resContents})
+	}
+
+	/* got == expect ? */
+	if !reflect.DeepEqual(expect, got) {
+		fmt.Printf("Got: %s\n", got)
+		fmt.Printf("Expect: %s\n", expect)
 		t.Fail()
 	}
 }
