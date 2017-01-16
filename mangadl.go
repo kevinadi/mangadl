@@ -12,6 +12,8 @@ import (
 
 	"time"
 
+	"bufio"
+
 	"github.com/PuerkitoBio/goquery"
 )
 
@@ -118,16 +120,39 @@ func downloadImage(url string) []byte {
 	return nil
 }
 
-func createCBZchan(cbzName string, downloadedPages <-chan DownloadResult, wgCBZ *sync.WaitGroup) {
-	/* create the zip file */
-	buf, createErr := os.Create(cbzName)
+func createCBZ(cbzName string, downloadedPages <-chan DownloadResult, wgFile *sync.WaitGroup) {
+	/* create the cbz file */
+	file, createErr := os.Create(cbzName)
 	if createErr != nil {
 		log.Fatal(createErr)
 	}
-	zipWriter := zip.NewWriter(buf)
 	log.Println("Creating cbz:", cbzName)
 
-	/* write to zipfile as each finished page arrives in channel */
+	/* create buffered IO writer from file */
+	buf := bufio.NewWriter(file)
+
+	/* write to buffer from result channel */
+	var wgCBZ sync.WaitGroup
+	wgCBZ.Add(1)
+	go cbzChan(buf, downloadedPages, &wgCBZ)
+	wgCBZ.Wait()
+
+	/* close the cbz file */
+	if closeErr := file.Close(); closeErr != nil {
+		log.Fatal(closeErr)
+	}
+	log.Printf("%s closed\n", cbzName)
+
+	/* signal to downloadChapters that all writes are done and the file is closed */
+	wgFile.Done()
+}
+
+func cbzChan(buf *bufio.Writer, downloadedPages <-chan DownloadResult, wgCBZ *sync.WaitGroup) {
+	/* create the zip archive from buffer */
+	zipWriter := zip.NewWriter(buf)
+
+	/* write to archive as each finished page arrives in channel */
+	pageCount := 0
 	for file := range downloadedPages {
 		/* create zip writer with header of filename, DEFLATE method, and current time */
 		header := zip.FileHeader{
@@ -144,17 +169,25 @@ func createCBZchan(cbzName string, downloadedPages <-chan DownloadResult, wgCBZ 
 		if err != nil {
 			log.Fatal(err)
 		}
+
+		/* flush the write buffer every 10th page */
+		if pageCount%10 == 0 {
+			if flushErr := buf.Flush(); flushErr != nil {
+				log.Fatal(flushErr)
+			}
+		}
+		pageCount++
 	}
 
-	/* close the archive */
+	/* close the buffer */
 	err := zipWriter.Close()
 	if err != nil {
 		log.Fatal(err)
 	}
-	log.Println(cbzName, "closed")
 
-	/* signal to downloadChapters that all writes are done and the archive is closed */
+	/* signal to createCBZ that all writes are done and the buffer is closed */
 	wgCBZ.Done()
+
 }
 
 func getFirstPage(site, manga string, chapter int) ([]string, []byte) {
@@ -284,7 +317,7 @@ func downloadChapters(site, manga string, fromChapter, toChapter, numChapterWork
 	var wgCBZ sync.WaitGroup
 	wgCBZ.Add(1)
 	cbzFile := fmt.Sprintf("%s-%03d-%03d.cbz", manga, fromChapter, toChapter)
-	go createCBZchan(cbzFile, downloadedPages, &wgCBZ)
+	go createCBZ(cbzFile, downloadedPages, &wgCBZ)
 
 	/* wait for all chapter downloads */
 	wgChapter.Wait()
