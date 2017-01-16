@@ -2,10 +2,8 @@ package main
 
 import (
 	"fmt"
-	"io"
 	"net/http"
 	"net/http/httptest"
-	"os"
 	"testing"
 
 	"reflect"
@@ -56,14 +54,29 @@ var mockmanga = Site{
 	parChapters: 1,
 	parPages:    1}
 
-func TestHttpTest(t *testing.T) {
-	t.SkipNow()
-	fmt.Println("URL:", tsPage.URL)
-	res, _ := http.Get(tsPage.URL)
-	io.Copy(os.Stdout, res.Body)
-	fmt.Println("URL:", tsImage.URL)
-	res, _ = http.Get(tsImage.URL)
-	io.Copy(os.Stdout, res.Body)
+func TestHttptestServers(t *testing.T) {
+	/* test that the image httptest returns "Image" */
+	res, _ := http.Get(tsImage.URL)
+	resImg, _ := ioutil.ReadAll(res.Body)
+	expectImg := []byte("Image")
+	if !reflect.DeepEqual(resImg, expectImg) {
+		fmt.Printf("URL: %s\n", tsImage.URL)
+		fmt.Printf("Got: %s\n", resImg)
+		fmt.Printf("Expect: %s\n", expectImg)
+		t.Fail()
+	}
+
+	/* test that the page httptest returns the correct page with image link */
+	res, _ = http.Get(tsPage.URL)
+	resPageBytes, _ := ioutil.ReadAll(res.Body)
+	resPage := fmt.Sprintf("%s", resPageBytes)
+	expectPage := fmt.Sprintf(pageHTML, tsImage.URL)
+	if !reflect.DeepEqual(resPage, expectPage) {
+		fmt.Printf("URL: %s\n", tsPage.URL)
+		fmt.Printf("Got: %s\n", resPage)
+		fmt.Printf("Expect: %s\n", expectPage)
+		t.Fail()
+	}
 }
 
 func TestMockImage(t *testing.T) {
