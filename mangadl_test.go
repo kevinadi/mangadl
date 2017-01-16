@@ -12,12 +12,13 @@ import (
 
 	"sync"
 
+	"io/ioutil"
+
 	"github.com/PuerkitoBio/goquery"
 )
 
 /* manga containing 3 pages */
-var pageHTML = `
-<html>
+var pageHTML = `<html>
 <body>
 <option value="/page1">1</option>
 <option value="/page2">2</option>
@@ -65,6 +66,41 @@ func TestHttpTest(t *testing.T) {
 	io.Copy(os.Stdout, res.Body)
 }
 
+func TestMockImage(t *testing.T) {
+	imgResp, _ := http.Get(tsImage.URL)
+	imgBytes, _ := ioutil.ReadAll(imgResp.Body)
+	expectBytes := []byte("Image")
+	if !reflect.DeepEqual(imgBytes, expectBytes) {
+		fmt.Printf("Got: %v\n", imgBytes)
+		fmt.Printf("Expect: %v\n", expectBytes)
+		t.Fail()
+	}
+}
+
+func TestMockPage(t *testing.T) {
+	resp, _ := http.Get(tsPage.URL)
+	doc, _ := goquery.NewDocumentFromResponse(resp)
+
+	img := mockmanga.img(doc)
+	expectImg := tsImage.URL
+	if !reflect.DeepEqual(img, expectImg) {
+		fmt.Printf("Got: %s\n", img)
+		fmt.Printf("Expect: %s\n", expectImg)
+		t.Fail()
+	}
+
+	pageList := mockmanga.pageList("", 1, doc)
+	expectLinks := []string{
+		tsPage.URL + "/page1",
+		tsPage.URL + "/page2",
+		tsPage.URL + "/page3"}
+	if !reflect.DeepEqual(pageList, expectLinks) {
+		fmt.Printf("Got: %s\n", pageList)
+		fmt.Printf("Expect: %s\n", expectLinks)
+		t.Fail()
+	}
+}
+
 func TestDownloadImage(t *testing.T) {
 	got := downloadImage(tsImage.URL)
 
@@ -82,7 +118,10 @@ func TestGetFirstPage(t *testing.T) {
 
 	links, pageImageBytes := getFirstPage("mockmanga", "manga-name", 1)
 
-	expectLinks := []string{tsPage.URL + "/page1", tsPage.URL + "/page2", tsPage.URL + "/page3"}
+	expectLinks := []string{
+		tsPage.URL + "/page1",
+		tsPage.URL + "/page2",
+		tsPage.URL + "/page3"}
 	if !reflect.DeepEqual(links, expectLinks) {
 		fmt.Printf("Got: %s\n", links)
 		fmt.Printf("Expect: %s\n", expectLinks)
