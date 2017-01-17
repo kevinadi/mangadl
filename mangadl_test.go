@@ -58,6 +58,21 @@ var mockmanga = Site{
 	parChapters: 1,
 	parPages:    1}
 
+func zipReader(b []byte) []DownloadResult {
+	var output []DownloadResult
+	reader := bytes.NewReader(b)
+	archiveReader, _ := zip.NewReader(reader, int64(len(b)))
+	for _, f := range archiveReader.File {
+		resName := f.Name
+		rc, _ := f.Open()
+		resContents, _ := ioutil.ReadAll(rc)
+		output = append(output, DownloadResult{
+			Name:    resName,
+			Content: resContents})
+	}
+	return output
+}
+
 func TestHttptestServers(t *testing.T) {
 	/* test that the image httptest returns "Image" */
 	res, _ := http.Get(tsImage.URL)
@@ -238,6 +253,7 @@ func TestDownloadChapter(t *testing.T) {
 }
 
 func TestCbzChan(t *testing.T) {
+	/* test using buffer instead of file */
 	var buf bytes.Buffer
 
 	/* expected result */
@@ -266,17 +282,7 @@ func TestCbzChan(t *testing.T) {
 	wg.Wait()
 
 	/* read the result zip archive */
-	bufReader := bytes.NewReader(buf.Bytes())
-	archiveReader, _ := zip.NewReader(bufReader, int64(buf.Cap()))
-	var got []DownloadResult
-	for _, f := range archiveReader.File {
-		resName := f.Name
-		rc, _ := f.Open()
-		resContents, _ := ioutil.ReadAll(rc)
-		got = append(got, DownloadResult{
-			Name:    resName,
-			Content: resContents})
-	}
+	got := zipReader(buf.Bytes())
 
 	/* got == expect ? */
 	if !reflect.DeepEqual(expect, got) {
