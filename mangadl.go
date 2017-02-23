@@ -13,6 +13,8 @@ import (
 
 	"time"
 
+	"mangadl/combine"
+
 	"github.com/PuerkitoBio/goquery"
 )
 
@@ -326,7 +328,7 @@ func main() {
 	switch args[0] {
 
 	case "combine":
-		combine()
+		combine.Combine()
 
 	default:
 		if len(args) < 3 {

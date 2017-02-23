@@ -1,4 +1,4 @@
-package main
+package combine
 
 import (
 	"archive/zip"
@@ -80,7 +80,7 @@ func combineCBZchan(cbzName string, contents <-chan zipFile, wgCBZ *sync.WaitGro
 	wgCBZ.Done()
 }
 
-func combine() {
+func Combine() {
 	args := os.Args[2:]
 	log.Println("Args: ", args)
 
