@@ -2,20 +2,19 @@ package main
 
 import (
 	"archive/zip"
+	"bytes"
 	"fmt"
+	"image/jpeg"
 	"io"
 	"io/ioutil"
 	"log"
+	"mangadl/combine"
 	"net/http"
 	"os"
 	"strconv"
-	"sync"
-
-	"time"
-
-	"mangadl/combine"
-
 	"strings"
+	"sync"
+	"time"
 
 	"github.com/PuerkitoBio/goquery"
 )
@@ -54,7 +53,7 @@ var readcomicbooksonline = Site{
 	page:        func(n string) string { return fmt.Sprintf("/%s", n) },
 	chapter:     func(n int) string { return fmt.Sprintf("") },
 	parChapters: 1,
-	parPages:    5}
+	parPages:    2}
 
 var mangareader = Site{
 	url: "http://www.mangareader.net/",
@@ -130,10 +129,10 @@ type DownloadResult struct {
 func downloadImage(url string) []byte {
 	for retry := 1; retry <= 3; retry++ {
 		/* open url */
-		response, e := http.Get(url)
-		if e != nil {
+		response, errHTTP := http.Get(url)
+		if errHTTP != nil {
 			log.Println("Error getting", url, "retrying...", retry)
-			time.Sleep(time.Second)
+			time.Sleep(3 * time.Second)
 			continue
 		}
 		defer response.Body.Close()
@@ -143,9 +142,18 @@ func downloadImage(url string) []byte {
 		if err != nil {
 			log.Fatalf("ioutil.ReadAll -> %v", err)
 		}
+
+		/* check if downloaded data is a valid jpeg */
+		_, errJpeg := jpeg.Decode(bytes.NewReader(data))
+		if errJpeg != nil {
+			log.Println("Error getting", url, "(incomplete file) retrying...", retry)
+			time.Sleep(3 * time.Second)
+			continue
+		}
+
 		return data
 	}
-	log.Fatal("Error downloading image after 3 retries:", url)
+	log.Println("Error downloading image after 3 retries:", url)
 	return nil
 }
 
