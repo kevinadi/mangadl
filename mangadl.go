@@ -15,6 +15,8 @@ import (
 
 	"mangadl/combine"
 
+	"strings"
+
 	"github.com/PuerkitoBio/goquery"
 )
 
@@ -28,6 +30,31 @@ type Site struct {
 	parChapters int
 	parPages    int
 }
+
+var readcomicbooksonline = Site{
+	url: "http://readcomicbooksonline.net/reader/",
+	img: func(doc *goquery.Document) string {
+		/* <img src="mangas/Valerian And Laureline/Valerian And Laureline 01 The City Of Shifting Waters/val-01-001.jpg" class="picture"> */
+		imageURL, found := doc.Find(".picture").Attr("src")
+		if !found {
+			log.Fatal("image not found in page: ", doc.Url.String())
+		}
+		return "http://readcomicbooksonline.net/reader/" + strings.Replace(imageURL, " ", "%20", -1)
+	},
+	pageList: func(manga string, chapter int, doc *goquery.Document) []string {
+		/* <select name="page"><option value=[pagelist]>...</select> */
+		var links []string
+		doc.Find("select[name=page]").First().Find("option").Each(func(i int, s *goquery.Selection) {
+			link, _ := s.Attr("value")
+			formattedLink := fmt.Sprintf("%s://%s/reader/%s/%s", doc.Url.Scheme, doc.Url.Host, manga, link)
+			links = append(links, formattedLink)
+		})
+		return links
+	},
+	page:        func(n string) string { return fmt.Sprintf("/%s", n) },
+	chapter:     func(n int) string { return fmt.Sprintf("") },
+	parChapters: 1,
+	parPages:    5}
 
 var mangareader = Site{
 	url: "http://www.mangareader.net/",
@@ -83,8 +110,9 @@ var mangafox = Site{
 	parPages:    1}
 
 var sites = map[string]Site{
-	"mangareader": mangareader,
-	"mangafox":    mangafox}
+	"mangareader":          mangareader,
+	"mangafox":             mangafox,
+	"readcomicbooksonline": readcomicbooksonline}
 
 // DownloadJob ...
 type DownloadJob struct {
@@ -185,7 +213,7 @@ func getFirstPage(site, manga string, chapter int) ([]string, []byte) {
 
 	resp, errget := http.Get(url)
 	if errget != nil {
-		log.Fatal("Error getting ", url)
+		log.Fatal("Error getting first page ", url)
 	}
 	defer resp.Body.Close()
 
@@ -306,6 +334,7 @@ func downloadChapters(site, manga string, fromChapter, toChapter, numChapterWork
 	var wgCBZ sync.WaitGroup
 	wgCBZ.Add(1)
 	cbzFile := fmt.Sprintf("%s-%03d-%03d.cbz", manga, fromChapter, toChapter)
+	cbzFile = strings.Replace(cbzFile, "/", "_", -1)
 	go createCBZ(cbzFile, downloadedPages, &wgCBZ)
 
 	/* wait for all chapter downloads */
