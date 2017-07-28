@@ -30,35 +30,32 @@ type Site struct {
 	parPages    int
 }
 
-var readcomicbooksonline = Site{
-	url: "http://readcomicbooksonline.net/reader/",
+var comicextra = Site{
+	url: "http://www.comicextra.com/",
 	img: func(doc *goquery.Document) string {
-		/* <img src="mangas/Valerian And Laureline/Valerian And Laureline 01 The City Of Shifting Waters/val-01-001.jpg" class="picture"> */
-		imageURL, found := doc.Find(".picture").Attr("src")
+		imageURL, found := doc.Find("#main_img").Attr("src")
 		if !found {
 			log.Fatal("image not found in page: ", doc.Url.String())
 		}
-		return "http://readcomicbooksonline.net/reader/" + strings.Replace(imageURL, " ", "%20", -1)
+		return imageURL
 	},
 	pageList: func(manga string, chapter int, doc *goquery.Document) []string {
-		/* <select name="page"><option value=[pagelist]>...</select> */
 		var links []string
-		doc.Find("select[name=page]").First().Find("option").Each(func(i int, s *goquery.Selection) {
-			link, _ := s.Attr("value")
-			formattedLink := fmt.Sprintf("%s://%s/reader/%s/%s", doc.Url.Scheme, doc.Url.Host, manga, link)
-			links = append(links, formattedLink)
+		doc.Find("select[name=page_select]").First().Find("option").Each(func(i int, s *goquery.Selection) {
+			if link, found := s.Attr("value"); found == true {
+				links = append(links, link)
+			}
 		})
 		return links
 	},
 	page:        func(n string) string { return fmt.Sprintf("/%s", n) },
-	chapter:     func(n int) string { return fmt.Sprintf("") },
+	chapter:     func(n int) string { return fmt.Sprintf("/chapter-%d", n) },
 	parChapters: 1,
-	parPages:    2}
+	parPages:    5}
 
 var mangareader = Site{
 	url: "http://www.mangareader.net/",
 	img: func(doc *goquery.Document) string {
-		/* <img id="img" src=[URL] name="img"> */
 		imageURL, found := doc.Find("#img").Attr("src")
 		if !found {
 			log.Fatal("image not found: ", doc.Url.String())
@@ -66,12 +63,12 @@ var mangareader = Site{
 		return imageURL
 	},
 	pageList: func(manga string, chapter int, doc *goquery.Document) []string {
-		/* <option value=[pagelist]> */
 		var links []string
-		doc.Find("option").Each(func(i int, s *goquery.Selection) {
-			link, _ := s.Attr("value")
-			formattedLink := fmt.Sprintf("%s://%s%s", doc.Url.Scheme, doc.Url.Host, link)
-			links = append(links, formattedLink)
+		doc.Find("#pageMenu").First().Find("option").Each(func(i int, s *goquery.Selection) {
+			if link, found := s.Attr("value"); found == true {
+				formattedLink := fmt.Sprintf("http://www.mangareader.net%s", link)
+				links = append(links, formattedLink)
+			}
 		})
 		return links
 	},
@@ -92,14 +89,13 @@ var mangafox = Site{
 	},
 	pageList: func(manga string, chapter int, doc *goquery.Document) []string {
 		var links []string
-		doc.Find("option").EachWithBreak(func(i int, s *goquery.Selection) bool {
-			val, _ := s.Attr("value")
-			if val == "0" {
-				return false
+		doc.Find("select.m").First().Find("option").Each(func(i int, s *goquery.Selection) {
+			if link, found := s.Attr("value"); found == true {
+				formattedLink := fmt.Sprintf("http://mangafox.me/manga/%s/c%03d/%s.html", manga, chapter, link)
+				if link != "0" {
+					links = append(links, formattedLink)
+				}
 			}
-			link := fmt.Sprintf("%s://%s/manga/%s/c%03d/%s.html", doc.Url.Scheme, doc.Url.Host, manga, chapter, val)
-			links = append(links, link)
-			return true
 		})
 		return links
 	},
@@ -109,9 +105,9 @@ var mangafox = Site{
 	parPages:    1}
 
 var sites = map[string]Site{
-	"mangareader":          mangareader,
-	"mangafox":             mangafox,
-	"readcomicbooksonline": readcomicbooksonline}
+	"mangareader": mangareader,
+	"mangafox":    mangafox,
+	"comicextra":  comicextra}
 
 // DownloadJob ...
 type DownloadJob struct {
@@ -147,6 +143,7 @@ func downloadImage(url string) []byte {
 		_, errJpeg := jpeg.Decode(bytes.NewReader(data))
 		if errJpeg != nil {
 			log.Println("Error getting", url, "(incomplete file) retrying...", retry)
+			log.Println("Header", response.Header.Get("Location"))
 			time.Sleep(3 * time.Second)
 			continue
 		}

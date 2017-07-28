@@ -1,20 +1,18 @@
 package main
 
 import (
+	"archive/zip"
+	"bytes"
 	"fmt"
+	"image"
+	"image/jpeg"
+	"io/ioutil"
 	"net/http"
 	"net/http/httptest"
-	"testing"
-
 	"reflect"
-
+	"strings"
 	"sync"
-
-	"io/ioutil"
-
-	"bytes"
-
-	"archive/zip"
+	"testing"
 
 	"github.com/PuerkitoBio/goquery"
 )
@@ -30,8 +28,12 @@ var pageHTML = `<html>
 </html>
 `
 
+var imageRGBA = image.NewRGBA(image.Rect(0, 0, 10, 10))
+var imageBuffer = new(bytes.Buffer)
+var imageJPG = jpeg.Encode(imageBuffer, imageRGBA, nil)
+
 var tsImage = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-	fmt.Fprint(w, "Image")
+	fmt.Fprint(w, imageBuffer)
 }))
 
 var tsPage = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -77,7 +79,7 @@ func TestHttptestServers(t *testing.T) {
 	/* test that the image httptest returns "Image" */
 	res, _ := http.Get(tsImage.URL)
 	resImg, _ := ioutil.ReadAll(res.Body)
-	expectImg := []byte("Image")
+	expectImg := imageBuffer.Bytes()
 	if !reflect.DeepEqual(resImg, expectImg) {
 		fmt.Printf("URL: %s\n", tsImage.URL)
 		fmt.Printf("Got: %s\n", resImg)
@@ -125,7 +127,7 @@ func TestMockPage(t *testing.T) {
 func TestDownloadImage(t *testing.T) {
 	got := downloadImage(tsImage.URL)
 
-	expect := []byte("Image")
+	expect := imageBuffer.Bytes()
 	if !reflect.DeepEqual(got, expect) {
 		fmt.Printf("Image src: %s\n", tsImage.URL)
 		fmt.Printf("Got: %s\n", got)
@@ -149,7 +151,7 @@ func TestGetFirstPage(t *testing.T) {
 		t.Fail()
 	}
 
-	expectImage := []byte("Image")
+	expectImage := imageBuffer.Bytes()
 	if !reflect.DeepEqual(pageImageBytes, expectImage) {
 		fmt.Printf("Got: %s\n", pageImageBytes)
 		fmt.Printf("Expect: %s\n", expectImage)
@@ -185,7 +187,7 @@ func TestDownloadPage(t *testing.T) {
 	got := <-result
 	expect := DownloadResult{
 		Name:    "image-001-001.jpg",
-		Content: []byte("Image")}
+		Content: imageBuffer.Bytes()}
 	if !reflect.DeepEqual(got, expect) {
 		fmt.Printf("Got: %s\n", got)
 		fmt.Printf("Expect: %s\n", expect)
@@ -195,7 +197,7 @@ func TestDownloadPage(t *testing.T) {
 	got = <-result
 	expect = DownloadResult{
 		Name:    "image-001-002.jpg",
-		Content: []byte("Image")}
+		Content: imageBuffer.Bytes()}
 	if !reflect.DeepEqual(got, expect) {
 		fmt.Printf("Got: %s\n", got)
 		fmt.Printf("Expect: %s\n", expect)
@@ -205,7 +207,7 @@ func TestDownloadPage(t *testing.T) {
 	got = <-result
 	expect = DownloadResult{
 		Name:    "image-002-001.jpg",
-		Content: []byte("Image")}
+		Content: imageBuffer.Bytes()}
 	if !reflect.DeepEqual(got, expect) {
 		fmt.Printf("Got: %s\n", got)
 		fmt.Printf("Expect: %s\n", expect)
@@ -236,7 +238,7 @@ func TestDownloadChapter(t *testing.T) {
 		for p := 0; p <= 2; p++ {
 			expect = append(expect, DownloadResult{
 				Name:    fmt.Sprintf("image-%03d-%03d.jpg", c, p),
-				Content: []byte("Image")})
+				Content: imageBuffer.Bytes()})
 		}
 	}
 
@@ -260,13 +262,13 @@ func TestCbzChan(t *testing.T) {
 	expect := []DownloadResult{
 		DownloadResult{
 			Name:    "image-001-001.jpg",
-			Content: []byte("Image")},
+			Content: imageBuffer.Bytes()},
 		DownloadResult{
 			Name:    "image-001-002.jpg",
-			Content: []byte("Image")},
+			Content: imageBuffer.Bytes()},
 		DownloadResult{
 			Name:    "image-002-001.jpg",
-			Content: []byte("Image")}}
+			Content: imageBuffer.Bytes()}}
 
 	/* create, fill, and close results channel */
 	downloadedPages := make(chan DownloadResult, 3)
@@ -285,6 +287,121 @@ func TestCbzChan(t *testing.T) {
 	got := zipReader(buf.Bytes())
 
 	/* got == expect ? */
+	if !reflect.DeepEqual(expect, got) {
+		fmt.Printf("Got: %s\n", got)
+		fmt.Printf("Expect: %s\n", expect)
+		t.Fail()
+	}
+}
+
+func TestComicextraImage(t *testing.T) {
+	/* Image URL */
+	html := `
+	<img id="main_img" class="chapter_img" src="http://2.bp.blogspot.com/g4M04SEdkwl1iGNHuRIq2PvqIdTIKuX5sjGPgVaQQmOJXu793uilskOe6cABXqKfAwy1wi4g-qzE=s0" data-width="820" alt="Valerian and Laureline 1 Page 1" style="width: 100%;">
+	`
+	htmlDocument, _ := goquery.NewDocumentFromReader(strings.NewReader(html))
+	expect := "http://2.bp.blogspot.com/g4M04SEdkwl1iGNHuRIq2PvqIdTIKuX5sjGPgVaQQmOJXu793uilskOe6cABXqKfAwy1wi4g-qzE=s0"
+	got := comicextra.img(htmlDocument)
+	if !reflect.DeepEqual(expect, got) {
+		fmt.Printf("Got: %s\n", got)
+		fmt.Printf("Expect: %s\n", expect)
+		t.Fail()
+	}
+}
+
+func TestComicextraPages(t *testing.T) {
+	/* Page list */
+	html := `
+	<select name="page_select" class="full-select"><option value="http://www.comicextra.com/valerian-and-laureline/chapter-1" selected="selected">1 </option><option value="http://www.comicextra.com/valerian-and-laureline/chapter-1/2">2 </option><option value="http://www.comicextra.com/valerian-and-laureline/chapter-1/3">3 </option></select>
+	<select name="page_select" class="full-select"><option value="http://www.comicextra.com/valerian-and-laureline/chapter-1" selected="selected">1 </option><option value="http://www.comicextra.com/valerian-and-laureline/chapter-1/2">2 </option><option value="http://www.comicextra.com/valerian-and-laureline/chapter-1/3">3 </option></select>
+	`
+	htmlDocument, _ := goquery.NewDocumentFromReader(strings.NewReader(html))
+	expectArray := []string{
+		"http://www.comicextra.com/valerian-and-laureline/chapter-1",
+		"http://www.comicextra.com/valerian-and-laureline/chapter-1/2",
+		"http://www.comicextra.com/valerian-and-laureline/chapter-1/3",
+	}
+	gotArray := comicextra.pageList("manga", 1, htmlDocument)
+	if !reflect.DeepEqual(expectArray, gotArray) {
+		fmt.Printf("Got: %s\n", gotArray)
+		fmt.Printf("Expect: %s\n", expectArray)
+		t.Fail()
+	}
+}
+
+func TestMangareaderImage(t *testing.T) {
+	/* Image URL */
+	html := `
+	<img id="img" width="800" height="1263" src="http://i10.mangareader.net/naruto/1/naruto-1564773.jpg" alt="Naruto 1 - Page 1" name="img">
+	`
+	htmlDocument, _ := goquery.NewDocumentFromReader(strings.NewReader(html))
+	expect := "http://i10.mangareader.net/naruto/1/naruto-1564773.jpg"
+	got := mangareader.img(htmlDocument)
+	if !reflect.DeepEqual(expect, got) {
+		fmt.Printf("Got: %s\n", got)
+		fmt.Printf("Expect: %s\n", expect)
+		t.Fail()
+	}
+}
+
+func TestMangareaderPages(t *testing.T) {
+	/* Page list */
+	html := `
+	<select id="pageMenu" name="pageMenu"><option value="/naruto/1" selected="selected">1</option>
+	<option value="/naruto/1/2">2</option>
+	<option value="/naruto/1/3">3</option>
+	</select>
+	<select id="pageMenu" name="pageMenu"><option value="/naruto/1" selected="selected">1</option>
+	<option value="/naruto/1/2">2</option>
+	<option value="/naruto/1/3">3</option>
+	</select>
+	`
+	htmlDocument, _ := goquery.NewDocumentFromReader(strings.NewReader(html))
+	expect := []string{
+		"http://www.mangareader.net/naruto/1",
+		"http://www.mangareader.net/naruto/1/2",
+		"http://www.mangareader.net/naruto/1/3",
+	}
+	got := mangareader.pageList("manga", 1, htmlDocument)
+	if !reflect.DeepEqual(expect, got) {
+		fmt.Printf("Got: %s\n", got)
+		fmt.Printf("Expect: %s\n", expect)
+		t.Fail()
+	}
+}
+
+func TestMangafoxImage(t *testing.T) {
+	/* Image link */
+	html := `
+	<img src="http://l.mfcdn.net/store/manga/8/01-001.0/compressed/naruto_v01_ch001_005.jpg?token=b0a60425c24cdb15e3a0d5681cd41b188d0d8a59&amp;ttl=1501300800" width="671" id="image" alt="Naruto 1: Uzumaki Naruto at MangaFox.me">
+	`
+	htmlDocument, _ := goquery.NewDocumentFromReader(strings.NewReader(html))
+	expect := "http://l.mfcdn.net/store/manga/8/01-001.0/compressed/naruto_v01_ch001_005.jpg?token=b0a60425c24cdb15e3a0d5681cd41b188d0d8a59&ttl=1501300800"
+	got := mangafox.img(htmlDocument)
+	if !reflect.DeepEqual(expect, got) {
+		fmt.Printf("Got: %s\n", got)
+		fmt.Printf("Expect: %s\n", expect)
+		t.Fail()
+	}
+}
+
+func TestMangafoxPages(t *testing.T) {
+	/* Page list */
+	html := `
+	<select onchange="change_page(this)" class="m">
+	<option value="1" selected="selected">1</option><option value="2">2</option><option value="3">3</option><option value="0">Comments</option>
+	</select>
+	<select onchange="change_page(this)" class="m">
+	<option value="1" selected="selected">1</option><option value="2">2</option><option value="3">3</option><option value="0">Comments</option>
+	</select>
+	`
+	htmlDocument, _ := goquery.NewDocumentFromReader(strings.NewReader(html))
+	expect := []string{
+		"http://mangafox.me/manga/naruto/c001/1.html",
+		"http://mangafox.me/manga/naruto/c001/2.html",
+		"http://mangafox.me/manga/naruto/c001/3.html",
+	}
+	got := mangafox.pageList("naruto", 1, htmlDocument)
 	if !reflect.DeepEqual(expect, got) {
 		fmt.Printf("Got: %s\n", got)
 		fmt.Printf("Expect: %s\n", expect)
