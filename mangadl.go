@@ -41,7 +41,7 @@ var comicextra = Site{
 	},
 	pageList: func(manga string, chapter int, doc *goquery.Document) []string {
 		var links []string
-		doc.Find("select[name=page_select]").First().Find("option").Each(func(i int, s *goquery.Selection) {
+		doc.Find("select[name=page_select]").Find("option").Each(func(i int, s *goquery.Selection) {
 			if link, found := s.Attr("value"); found == true {
 				links = append(links, link)
 			}
@@ -311,6 +311,7 @@ func downloadChapter(site, manga string, chapters <-chan int, downloadedPages ch
 func downloadChapters(site, manga string, fromChapter, toChapter, numChapterWorkers, numPageWorkers int) {
 	/* get number of chapters from command line */
 	numChapters := toChapter - fromChapter + 1 // +1 to include the starting chapter
+	log.Println("Number of chapters:", numChapters)
 
 	/* channel for chapters to be downloaded */
 	chaptersJob := make(chan int)
@@ -338,7 +339,12 @@ func downloadChapters(site, manga string, fromChapter, toChapter, numChapterWork
 	/* send downloaded pages to cbz writer */
 	var wgCBZ sync.WaitGroup
 	wgCBZ.Add(1)
-	cbzFile := fmt.Sprintf("%s-%03d-%03d.cbz", manga, fromChapter, toChapter)
+	var cbzFile string
+	if fromChapter == toChapter {
+		cbzFile = fmt.Sprintf("%s-%03d.cbz", manga, fromChapter)
+	} else {
+		cbzFile = fmt.Sprintf("%s-%03d-%03d.cbz", manga, fromChapter, toChapter)
+	}
 	cbzFile = strings.Replace(cbzFile, "/", "_", -1)
 	go createCBZ(cbzFile, downloadedPages, &wgCBZ)
 
